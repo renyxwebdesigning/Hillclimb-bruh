@@ -63,6 +63,7 @@ class Run:
         self._air_t = 0.0
         self._air_rot = 0.0
         self._inverted_head = 9.0
+        self._flip_t = 0.0
         self._land_vy = 0.0
         self._exhaust_t = 0.0
         self._smoke_t = 0.0
@@ -119,6 +120,7 @@ class Run:
                 self._maybe_seize(dt, g)
                 self._check_finish()
                 self._check_lava()
+                self._check_flipped(dt)
         else:
             self.end_t += dt
             if self.end_t > 2.2:
@@ -185,6 +187,21 @@ class Run:
                 self.outbox.append({"kind": "crash"})
             else:
                 self.finish("BURNED IN LAVA!")
+
+    def _check_flipped(self, dt):
+        """On its roof and not moving (no fuel to run out): end the run instead of leaving the player stuck."""
+        car = self.car
+        resting = math.cos(car.angle) < -0.2 and math.hypot(car.vx, car.vy) < 1.0
+        self._flip_t = self._flip_t + dt if resting else 0.0
+        if self._flip_t < 2.5 or self.state != "drive":
+            return
+        self._flip_t = 0.0
+        if self.online:
+            self.respawn_t = 0.4
+            self.hud.notice("FLIPPED!", (255, 176, 40))
+        else:
+            self.audio.play("crash")
+            self.finish("FLIPPED OVER!")
 
     def _respawn(self):
         self.respawn_t = None

@@ -126,7 +126,12 @@ class App:
         self.coin_icon_small = sprites.coin(5, gfx.si(11))
         self.speaker = ui.speaker_icons(gfx.s(28))
         self.note = ui.note_icons(gfx.s(28))
-        self.sound_rect = self.music_rect = None
+        self.sound_rect = self.music_rect = self.fs_rect = self.fs_extra = None
+        self.fs_icon = ui.fullscreen_icons(gfx.s(26))
+        self._fs_ok = None
+        self._fs_web = False
+        self._fs_sent = None
+        self._web_check = 0.0
         self.now = 0.0
         self._terrains = {}
         self._worlds = {}
@@ -184,7 +189,23 @@ class App:
     def apply_graphics(self):
         render.QUALITY = self.data["graphics"]
 
+    def fs_available(self):
+        if not WEB:
+            return True
+        if self._fs_ok is None:
+            try:
+                import platform as browser
+                self._fs_ok = bool(browser.window.hr_fs_ok())
+            except Exception:
+                self._fs_ok = False          # e.g. iPhone Safari has no fullscreen for pages
+        return self._fs_ok
+
+    def is_fullscreen(self):
+        return self._fs_web if WEB else self.data["fullscreen"]
+
     def toggle_fullscreen(self):
+        if WEB:
+            return                  # the page script does it: browsers only allow it inside the tap itself
         try:
             pygame.display.toggle_fullscreen()
             self.data["fullscreen"] = not self.data["fullscreen"]
@@ -212,6 +233,7 @@ class App:
         key = stage["key"]
         if key not in self._terrains:
             self._terrains[key] = Terrain(stage)
+        if key not in self._worlds:
             self._worlds[key] = WorldRenderer(stage, self._terrains[key], self.art)
         t = self._terrains[key]
         for c in t.coins:
@@ -234,6 +256,7 @@ class App:
         self.run_stage = stage
         self.pause = None
         self.mouse_pedal = None
+        self.fingers.clear()
         self.state = "play"
         pygame.key.stop_text_input()
         self.audio.engine_stop()
@@ -378,6 +401,9 @@ class App:
         dt = min(0.05, self.clock.tick(FPS) / 1000)
         self.now += dt
         mouse = pygame.mouse.get_pos()
+        self.fs_rect = self.fs_extra = None
+        if WEB:
+            self._web_tick(dt)
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 self.running = False
@@ -401,23 +427,94 @@ class App:
             self.play_frame(dt, mouse)
         elif self.state == "results":
             self.results.draw(self.screen, mouse, self.now, dt)
-        self.hud.draw_toasts(self.screen, dt)
+        # on the results screen the top holds the big banner: show cards between score panel and buttons
+        self.hud.draw_toasts(self.screen, dt, gfx.s(496) if self.state == "results" else None)
         if self.invite is not None:
             self.invite_popup.draw(self.screen, mouse, self.invite)
+        if WEB:
+            self._publish_fs_rect()
         self.window.blit(self.screen, (0, 0))
         pygame.display.flip()
 
+    # ------------------------------------------------------------ browser
+    SAFE_TO_RELAYOUT = ("home", "stages", "vehicles", "drivers", "garage", "settings", "trophies", "leaderboard")
+
+    def _web_tick(self, dt):
+        """Twice a second: follow fullscreen changes and re-fit the layout to the browser's shape."""
+        self._web_check -= dt
+        if self._web_check > 0:
+            return
+        self._web_check = 0.5
+        try:
+            import platform as browser
+            self._fs_web = bool(browser.window.hr_fs_on())
+        except Exception:
+            pass
+        w, h = window_size()
+        if abs(w - gfx.W) >= 8 and self.state in self.SAFE_TO_RELAYOUT and self.invite is None:
+            self.relayout(w, h)
+
+    def _publish_fs_rect(self):
+        """Tell the page where the fullscreen button is; the page itself reacts to the tap."""
+        rects = [r for r in (self.fs_rect, self.fs_extra) if r is not None] if self.fs_available() else []
+        if self.state == "play" and self.pause is not None or self.invite is not None:
+            rects = []
+        key = tuple((r.x, r.y, r.w, r.h) for r in rects)
+        if key == self._fs_sent:
+            return
+        self._fs_sent = key
+        try:
+            import platform as browser
+            browser.window.hr_fs_set(-1, -1, 0, 0)
+            for r in rects:
+                g = r.inflate(gfx.s(12), gfx.s(12))
+                browser.window.hr_fs_add(g.x / gfx.W, g.y / gfx.H, g.w / gfx.W, g.h / gfx.H)
+        except Exception:
+            pass
+
+    def relayout(self, w, h):
+        """Rebuild everything that depends on the screen size (menus only, never mid-run)."""
+        self.window = pygame.display.set_mode((w, h))
+        self.screen = gfx.init(w, h)
+        touch_mode = self.hud.touch_mode
+        self.hud = Hud()
+        self.hud.touch_mode = touch_mode
+        self._worlds.clear()
+        state = self.state
+        self.screens = {"home": None, "stages": ui.StageSelect(self), "vehicles": ui.VehicleSelect(self),
+                        "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
+                        "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
+        self.screens["home"] = home.HomeMenu(self)
+        self.screens["settings"] = ui.Settings(self)
+        self.screens["trophies"] = ui.TrophyRoom(self)
+        self.screens["leaderboard"] = ui.Leaderboard(self)
+        self.race_board = ui.RaceResults(self)
+        self.invite_popup = ui.InvitePopup(self)
+        self._fs_sent = None
+        if state == "settings":
+            self.screens["settings"].enter()
+        try:
+            import platform as browser
+            browser.window.window_resize()
+        except Exception:
+            pass
+
     def touch(self, ev):
         """Multi-touch for phones: every finger can hold its own pedal (gas + boost together)."""
-        if self.state != "play":
-            return
-        pos = (ev.x * gfx.W, ev.y * gfx.H)
         if ev.type == pygame.FINGERUP:
-            self.fingers.pop(ev.finger_id, None)
+            self.fingers.pop(ev.finger_id, None)      # even after the run ended, or a pedal stays held
             return
-        hit = self.hud.hit(pos, self.run.seized if self.run else False)
+        self.hud.touch_mode = True
+        if self.state != "play" or self.run is None:
+            return
+        if self.pause is not None or (self.session and self.session.results is not None):
+            return                                    # menus on top get the taps as mouse clicks
+        pos = (ev.x * gfx.W, ev.y * gfx.H)
+        hit = self.hud.hit(pos, self.run.seized, self.fs_available())
         if ev.type == pygame.FINGERDOWN:
-            if hit == "repair":
+            if hit == "fullscreen":
+                self.toggle_fullscreen()
+            elif hit == "repair":
                 self.run.repair()
             elif hit == "horn":
                 self.run.honk()
@@ -514,6 +611,8 @@ class App:
             elif act == "leave":
                 self.leave_session()
             return
+        if ev.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and getattr(ev, "touch", False):
+            return                  # a finger: already handled by touch(), don't count the tap twice
         if ev.type == pygame.KEYDOWN:
             if ev.key in (pygame.K_ESCAPE, pygame.K_p):
                 self.open_pause()
@@ -526,8 +625,10 @@ class App:
             elif ev.key == pygame.K_r and not run.online:
                 self.start_run()
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            hit = self.hud.hit(ev.pos, run.seized)
-            if hit == "pause":
+            hit = self.hud.hit(ev.pos, run.seized, self.fs_available())
+            if hit == "fullscreen":
+                self.toggle_fullscreen()
+            elif hit == "pause":
                 self.open_pause()
             elif hit == "repair":
                 run.repair()
@@ -585,7 +686,11 @@ class App:
         views.append(CarView(run.car, run.driver, run.wobble, run.lights_on, bubble=run.bubble))
         self.world.draw(self.screen, run.cam, views, run.particles, self.now, 0 if frozen else dt, run.best,
                         darkness, sunset, run.race_m)
-        self.hud.draw(self.screen, run, gas and run.state == "drive", brake and run.state == "drive", self.now, race)
+        fs_icon = self.fs_icon[self.is_fullscreen()] if self.fs_available() else None
+        self.hud.draw(self.screen, run, gas and run.state == "drive", brake and run.state == "drive", self.now, race,
+                      fs_icon)
+        if fs_icon is not None:
+            self.fs_rect = self.hud.fs_rect
         if run.state == "ending":
             color = (255, 76, 60) if run.reason.startswith("DRIVER") else (255, 176, 40)
             self.hud.draw_banner(self.screen, run.reason, color, run.end_t)

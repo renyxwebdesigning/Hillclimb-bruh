@@ -159,12 +159,14 @@ class Popup:
 
 class Hud:
     def __init__(self):
-        self.brake_img = _pedal(s(128), s(118), "BRAKE", 2, 3)
-        self.gas_img = _pedal(s(104), s(126), "GAS", 3, 2)
+        from config import WEB
+        k = 1.3 if WEB else 1.0             # thumbs on a phone need bigger targets
+        self.brake_img = _pedal(s(176 * k), s(160 * k), "BRAKE", 2, 3)
+        self.gas_img = _pedal(s(142 * k), s(172 * k), "GAS", 3, 2)
         self.rpm_face = _gauge_face(s(60), "RPM")
         self.boost_face = _gauge_face(s(60), "boost")
-        self.boost_btn = {lit: _boost_button(s(38), lit) for lit in (False, True)}
-        self.horn_btn = {k: _horn_button(s(34), k) for k in ("puppy", "ship")}
+        self.boost_btn = {lit: _boost_button(s(54 * k), lit) for lit in (False, True)}
+        self.horn_btn = {kind: _horn_button(s(40 * k), kind) for kind in ("puppy", "ship")}
         self.wrench = _wrench(s(70))
         self.pause_img = _pause_icon(s(27))
         self.ruler_img = _ruler_icon(s(24))
@@ -173,11 +175,15 @@ class Hud:
         self.notices = []
         self.toasts = []
         W, H = gfx.W, gfx.H
-        self.brake_rect = self.brake_img.get_rect(bottomleft=(s(26), H - s(34)))
-        self.gas_rect = self.gas_img.get_rect(bottomright=(W - s(26), H - s(34)))
+        # big pedals in the bottom corners; boost sits above the brake (left thumb), horn above the gas
+        self.brake_rect = self.brake_img.get_rect(bottomleft=(s(22), H - s(26)))
+        self.gas_rect = self.gas_img.get_rect(bottomright=(W - s(22), H - s(26)))
         self.pause_rect = self.pause_img.get_rect(topright=(W - s(18), s(14)))
-        self.boost_rect = self.boost_btn[False].get_rect(center=(self.gas_rect.centerx - s(8), self.gas_rect.top - s(64)))
-        self.horn_rect = self.horn_btn["puppy"].get_rect(center=(self.brake_rect.centerx, self.brake_rect.top - s(60)))
+        self.fs_rect = pygame.Rect(0, 0, s(54), s(54))
+        self.fs_rect.center = (self.pause_rect.centerx - s(70), self.pause_rect.centery)
+        self.boost_rect = self.boost_btn[False].get_rect(center=(self.brake_rect.centerx, self.brake_rect.top - s(78 * k)))
+        self.horn_rect = self.horn_btn["puppy"].get_rect(center=(self.gas_rect.centerx, self.gas_rect.top - s(62 * k)))
+        self.touch_mode = False             # set once a finger touches the screen: show tap hints
         self.fix_rect = pygame.Rect(0, 0, s(500), s(196))
         self.fix_rect.midtop = (W / 2, s(84))
 
@@ -190,7 +196,8 @@ class Hud:
     def toast(self, title, sub):
         self.toasts.append([title, sub, 0.0])
 
-    def draw_toasts(self, surf, dt):
+    def draw_toasts(self, surf, dt, top=None):
+        """Achievement / trophy cards; slide down from the top, or rise into place at `top`."""
         if not self.toasts:
             return
         t = self.toasts[0]
@@ -200,7 +207,10 @@ class Hud:
             return
         k = min(1.0, t[2] / 0.3, (3.6 - t[2]) / 0.3)
         box = pygame.Rect(0, 0, s(560), s(78))
-        box.midtop = (gfx.W / 2, s(-80) + s(150) * k)
+        if top is None:
+            box.midtop = (gfx.W / 2, s(-80) + s(150) * k)
+        else:
+            box.midtop = (gfx.W / 2, top + s(30) * (1 - k))
         pygame.draw.rect(surf, (24, 24, 28), box, border_radius=si(14))
         pygame.draw.rect(surf, (255, 204, 48), box, si(3), border_radius=si(14))
         cup = self._cup()
@@ -226,17 +236,21 @@ class Hud:
         self.notices = [n for n in self.notices if n[2] < 1.6]
 
     # --------------------------------------------------------------- drawing
-    def draw(self, surf, run, gas, brake, now, race=None):
+    def draw(self, surf, run, gas, brake, now, race=None, fs_icon=None):
         self._draw_info(surf, run, race)
         surf.blit(self.boost_btn[run.boosting], self.boost_rect)
         surf.blit(self.horn_btn[run.horn_kind], self.horn_rect)
-        if run.time < 7 and run.state == "drive" and run.countdown <= 0 and not run.seized:
+        if run.time < 7 and run.state == "drive" and run.countdown <= 0 and not run.seized and not self.touch_mode:
             a = int(255 * min(1.0, (7 - run.time) / 1.0))
             img = gfx.text("cond_i", 22, "SPACE boost  ·  H horn  ·  L lights  ·  ENTER fixes a seized engine",
                            WHITE, outline=INK, width=2).copy()
             img.set_alpha(a)
             surf.blit(img, img.get_rect(center=(gfx.W / 2, s(150))))
         surf.blit(self.pause_img, self.pause_rect)
+        if fs_icon is not None:
+            pygame.draw.circle(surf, (24, 26, 30), self.fs_rect.center, self.fs_rect.w / 2)
+            pygame.draw.circle(surf, (66, 70, 76), self.fs_rect.center, self.fs_rect.w / 2 - s(2))
+            surf.blit(fs_icon, fs_icon.get_rect(center=self.fs_rect.center))
         self._draw_pedal(surf, self.brake_img, self.brake_rect, brake)
         self._draw_pedal(surf, self.gas_img, self.gas_rect, gas)
         cx = gfx.W / 2
@@ -274,7 +288,8 @@ class Hud:
         title = pygame.transform.smoothscale_by(
             gfx.text("black_i", 50, "KOLBENKLEMMER!", (255, 70, 50), outline=INK, width=3), pulse)
         surf.blit(title, title.get_rect(center=(r.centerx, r.y + s(46))))
-        gfx.blit_text(surf, "cond", 24, "Hammer ENTER to fix the engine!", WHITE, (r.centerx, r.y + s(100)), "center")
+        how = "Tap this box again and again to fix it!" if self.touch_mode else "Hammer ENTER to fix the engine!"
+        gfx.blit_text(surf, "cond", 24, how, WHITE, (r.centerx, r.y + s(100)), "center")
         ang = -30 + (40 if run.fix_shake > 0 else 0) + 6 * math.sin(now * 6)
         w = pygame.transform.rotozoom(self.wrench, ang, 1.0)
         surf.blit(w, w.get_rect(center=(r.x + s(70), r.y + s(150))))
@@ -379,14 +394,16 @@ class Hud:
         img.set_alpha(int(255 * k))
         surf.blit(img, img.get_rect(center=(gfx.W / 2, gfx.H * 0.36)))
 
-    def hit(self, pos, seized=False):
+    def hit(self, pos, seized=False, fullscreen=False):
         if seized and self.fix_rect.collidepoint(pos):
             return "repair"
         if self.pause_rect.inflate(s(16), s(16)).collidepoint(pos):
             return "pause"
-        if self.boost_rect.inflate(s(10), s(10)).collidepoint(pos):
+        if fullscreen and self.fs_rect.inflate(s(10), s(10)).collidepoint(pos):
+            return "fullscreen"
+        if self.boost_rect.inflate(s(24), s(24)).collidepoint(pos):
             return "boost"
-        if self.horn_rect.inflate(s(10), s(10)).collidepoint(pos):
+        if self.horn_rect.inflate(s(20), s(20)).collidepoint(pos):
             return "horn"
         if self.gas_rect.inflate(s(30), s(40)).collidepoint(pos) or pos[0] > gfx.W * 0.62 and pos[1] > gfx.H * 0.45:
             return "gas"

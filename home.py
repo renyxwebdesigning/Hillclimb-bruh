@@ -160,7 +160,8 @@ class HomeMenu:
         self._info_card(surf)
         self._daily_card(surf, mouse)
         self._toggles(surf)
-        gfx.blit_text(surf, "cond", 15, "Arrow keys + Enter, or click", (190, 194, 202),
+        hint = "Tap a button" if app.hud.touch_mode else "Arrow keys + Enter, or click"
+        gfx.blit_text(surf, "cond", 15, hint, (190, 194, 202),
                       (s(58), gfx.H - s(22)), "midleft", outline=INK, width=1)
 
     def _daily_card(self, surf, mouse):
@@ -201,7 +202,12 @@ class HomeMenu:
         app.sound_rect = sound.get_rect(topright=(gfx.W - s(22), s(20)))
         note = app.note[app.data["music"]]
         app.music_rect = note.get_rect(topright=(app.sound_rect.left - s(22), s(20)))
-        for img, r in ((sound, app.sound_rect), (note, app.music_rect)):
+        icons = [(sound, app.sound_rect), (note, app.music_rect)]
+        if app.fs_available():
+            fs = app.fs_icon[app.is_fullscreen()]
+            app.fs_rect = fs.get_rect(topright=(app.music_rect.left - s(22), s(20)))
+            icons.append((fs, app.fs_rect))
+        for img, r in icons:
             bg = r.inflate(s(16), s(14))
             pygame.draw.rect(surf, (12, 14, 20), bg, border_radius=si(10))
             surf.blit(img, r)

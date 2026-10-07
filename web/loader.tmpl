@@ -615,6 +615,55 @@ function show_infobox() {
     })();
     </script>
 
+    <script>
+    // Fullscreen: the game draws the buttons and tells us where they are (hr_fs_set/add, fractions of the
+    // canvas); browsers only allow fullscreen inside the tap itself, so the page handles that tap.
+    (function () {
+        var rects = [], last = 0, d = document;
+        function on() { return !!(d.fullscreenElement || d.webkitFullscreenElement); }
+        window.hr_fs_ok = function () {
+            return (d.fullscreenEnabled || d.webkitFullscreenEnabled) ? 1 : 0;
+        };
+        window.hr_fs_on = function () { return on() ? 1 : 0; };
+        window.hr_fs_set = function (x, y, w, h) { rects = x < 0 ? [] : [[x, y, w, h]]; };
+        window.hr_fs_add = function (x, y, w, h) { rects.push([x, y, w, h]); };
+        function toggle() {
+            if (on()) {
+                (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+                return;
+            }
+            var el = d.documentElement;
+            var req = el.requestFullscreen || el.webkitRequestFullscreen;
+            if (!req) return;
+            var p = req.call(el, { navigationUI: "hide" });
+            if (p && p.then) {
+                p.then(function () {
+                    try { screen.orientation.lock("landscape").catch(function () {}); } catch (e) {}
+                }).catch(function () {});
+            }
+        }
+        function up(e) {
+            if (!rects.length) return;
+            var c = d.getElementById("canvas");
+            if (!c) return;
+            var b = c.getBoundingClientRect();
+            var p = e.changedTouches ? e.changedTouches[0] : e;
+            var x = (p.clientX - b.left) / b.width, y = (p.clientY - b.top) / b.height;
+            var inside = rects.some(function (r) { return x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]; });
+            if (!inside) return;
+            var now = Date.now();
+            if (now - last < 500) return;        // touchend and pointerup both fire for one tap
+            last = now;
+            toggle();
+        }
+        d.addEventListener("pointerup", up, true);
+        d.addEventListener("touchend", up, true);
+        // after the page changes shape, re-fit the canvas
+        d.addEventListener("fullscreenchange", function () { if (window.window_resize) window_resize(); });
+        d.addEventListener("webkitfullscreenchange", function () { if (window.window_resize) window_resize(); });
+    })();
+    </script>
+
     <div id="transfer" align=center>
 <!--        <div class="spinner" id='spinner'></div> -->
         <div class="emscripten" id="status">Downloading...</div>

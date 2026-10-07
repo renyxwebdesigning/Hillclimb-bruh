@@ -98,10 +98,16 @@ def top_bar(surf, app, title):
     note = app.note[app.data["music"]]
     app.music_rect = note.get_rect(midright=(app.sound_rect.left - s(22), bar.centery))
     surf.blit(note, app.music_rect)
+    left = app.music_rect.left
+    if app.fs_available():
+        fs = app.fs_icon[app.is_fullscreen()]
+        app.fs_rect = fs.get_rect(midright=(left - s(22), bar.centery))
+        surf.blit(fs, app.fs_rect)
+        left = app.fs_rect.left
     relay = getattr(app, "relay", None)
     if relay is not None:
         tag = gfx.text("cond", 20, f"#{app.data['player_id']}", GOLD)
-        r = tag.get_rect(midright=(app.music_rect.left - s(26), bar.centery))
+        r = tag.get_rect(midright=(left - s(26), bar.centery))
         surf.blit(tag, r)
         pygame.draw.circle(surf, (90, 220, 70) if relay.online else (230, 160, 40), (r.left - s(12), bar.centery), s(6))
 
@@ -112,6 +118,9 @@ def toggles_hit(app, pos):
         return True
     if app.music_rect and app.music_rect.inflate(s(10), s(10)).collidepoint(pos):
         app.toggle_music()
+        return True
+    if app.fs_rect and app.fs_rect.inflate(s(10), s(10)).collidepoint(pos):
+        app.toggle_fullscreen()
         return True
     return False
 
@@ -148,6 +157,24 @@ def note_icons(h):
             if not on:
                 _cross(surf, W, H, 0.7)
         out[on] = gfx.supersample(h * 1.1, h, draw)
+    return out
+
+
+def fullscreen_icons(h):
+    """Four corner brackets: pointing out (go fullscreen) or in (leave fullscreen)."""
+    out = {}
+    for on in (False, True):
+        def draw(surf, k, on=on):
+            W, H = surf.get_size()
+            col, lw = (236, 238, 242), max(2, int(W * 0.11))
+            a, b = (0.1, 0.4) if not on else (0.36, 0.06)    # corner point, arm end
+            for sx in (0, 1):
+                for sy in (0, 1):
+                    fx = (lambda v: v) if sx == 0 else (lambda v: 1 - v)
+                    fy = (lambda v: v) if sy == 0 else (lambda v: 1 - v)
+                    c = (fx(a) * W, fy(a) * H)
+                    pygame.draw.lines(surf, col, False, [(fx(b) * W, c[1]), c, (c[0], fy(b) * H)], lw)
+        out[on] = gfx.supersample(h, h, draw)
     return out
 
 
@@ -763,8 +790,9 @@ class Results:
         pressed = pygame.mouse.get_pressed()[0]
         self.garage.draw(surf, mouse, pressed)
         self.retry.draw(surf, mouse, pressed)
-        gfx.blit_text(surf, "cond", 18, "Enter / R to retry  ·  Esc for garage", (170, 174, 182),
-                      (gfx.W / 2, gfx.H - s(30)), "center")
+        if not self.app.hud.touch_mode:
+            gfx.blit_text(surf, "cond", 18, "Enter / R to retry  ·  Esc for garage", (170, 174, 182),
+                          (gfx.W / 2, gfx.H - s(30)), "center")
 
 
 class PauseMenu:
@@ -793,7 +821,9 @@ class PauseMenu:
         surf.blit(dim, (0, 0))
         gfx.blit_text(surf, "black_i", 72, "PAUSED", WHITE, (gfx.W / 2, gfx.H / 2 - s(120)), "center",
                       outline=INK, width=4, shadow=4)
-        gfx.blit_text(surf, "cond", 18, "M toggles music", (170, 174, 182), (gfx.W / 2, gfx.H / 2 + s(226)), "center")
+        if not self.app.hud.touch_mode:
+            gfx.blit_text(surf, "cond", 18, "M toggles music", (170, 174, 182), (gfx.W / 2, gfx.H / 2 + s(226)),
+                          "center")
         for b in self.buttons:
             b.draw(surf, mouse, pygame.mouse.get_pressed()[0])
 
@@ -1396,7 +1426,7 @@ class Settings:
                 app.apply_graphics()
                 app.persist()
             d = self.full_sel.hit(ev.pos)
-            if d:
+            if d and app.fs_available():
                 app.toggle_fullscreen()
             d = self.ghost_sel.hit(ev.pos)
             if d:
@@ -1421,7 +1451,11 @@ class Settings:
             sl.draw(surf, app.data["volume"][key])
         self.music_sel.draw(surf, self.track_names.get(app.data["music_track"], "AUTO"))
         self.gfx_sel.draw(surf, "HIGH" if app.data["graphics"] == "high" else "LOW (FASTER)")
-        self.full_sel.draw(surf, "ON" if app.data["fullscreen"] else "OFF")
+        if app.fs_available():
+            self.full_sel.draw(surf, "ON" if app.is_fullscreen() else "OFF")
+            app.fs_extra = self.full_sel.rect          # browser: the page switches on the tap itself
+        else:
+            self.full_sel.draw(surf, "NOT ON THIS DEVICE", enabled=False)
         self.ghost_sel.draw(surf, "SHOW" if app.data.get("ghosts", True) else "HIDE")
         keys = pygame.Rect(0, 0, s(460), s(150))
         keys.midtop = (gfx.W / 2 + s(270), s(484))

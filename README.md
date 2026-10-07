@@ -48,7 +48,9 @@ Online play goes through a free public relay server (HiveMQ, with fallbacks), so
 | M | Music on/off |
 | F11 | Fullscreen |
 
-The on-screen pedals, boost and horn buttons also work with the mouse.
+On a phone: GAS bottom right, BRAKE bottom left, BOOST above the brake (hold it together with the gas), horn above the gas. Tap the seized-engine box to fix it. The on-screen buttons also work with the mouse.
+
+The square button at the top right switches to fullscreen (not available on iPhone; add the page to your home screen instead).
 
 ## Features
 
