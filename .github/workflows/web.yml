@@ -25,7 +25,7 @@ jobs:
           cp *.py web-src/
           cp -r assets web-src/
           if ! python -m pygbag --build --title "Hill Rider" web-src > build.log 2>&1; then
-            tail -30 build.log | while IFS= read -r line; do echo "::error::$line"; done
+            echo "::error::$(grep -v ' : assets/' build.log | tail -25 | sed 's/%/%25/g' | tr '\n' '~' | sed 's/~/%0A/g')"
             exit 1
           fi
           tail -5 build.log
