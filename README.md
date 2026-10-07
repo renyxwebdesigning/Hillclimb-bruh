@@ -8,6 +8,10 @@ A 2D hill-climb driving game. Drive as far as you can over hills, bridges and tu
 
 Works on any computer or phone (hold the phone sideways). Online play needs the download version.
 
+**Install it like an app** (icon on the home screen, fullscreen, starts without internet after the first time):
+- iPhone / iPad: open the link in **Safari**, tap **Share** → **Add to Home Screen**.
+- Android: open the link in **Chrome**, tap **⋮** → **Install app** (or **Add to Home screen**).
+
 ## Download and play (no installing)
 
 | Computer | Download |
