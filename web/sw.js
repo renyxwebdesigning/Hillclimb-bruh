@@ -1,7 +1,8 @@
 // Hill Rider offline support.
-// Our own files: network first (so updates arrive), the saved copy when offline.
+// Our own files: always ask the server first (bypassing the 10-minute browser cache, so updates show up
+// at once), the saved copy when offline.
 // The game engine from the pygbag server never changes for a given version: saved copy first.
-const CACHE = "hill-rider-v2";
+const CACHE = "hill-rider-v3";
 
 self.addEventListener("install", (e) => {
     e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "index.html", "manifest.webmanifest",
@@ -28,7 +29,7 @@ self.addEventListener("fetch", (e) => {
     if (req.method !== "GET" || !req.url.startsWith("http")) return;
     const own = new URL(req.url).origin === self.location.origin;
     if (own) {
-        e.respondWith(fetch(req).then((res) => save(req, res))
+        e.respondWith(fetch(req.url, { cache: "no-cache" }).then((res) => save(req, res))
                       .catch(() => caches.match(req, { ignoreSearch: true })));
     } else {
         e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((res) => save(req, res))));
