@@ -6,6 +6,10 @@ TITLE = "Hill Rider"
 WEB = sys.platform == "emscripten"     # running in a web browser (pygbag)
 FPS = 60
 PHYS_DT = 1 / 500          # fixed physics step (s)
+# Arcade gravity: real 9.8 m/s² with real-sized cars feels floaty. Every stage's gravity is
+# multiplied by this, and engine, springs, boost and air control scale with it, so speeds,
+# climbing and flips stay the same while jumps get shorter and landings heavier.
+GRAVITY_SCALE = 1.7
 BASE_PPM = 56              # pixels per metre at 720p, before speed zoom-out
 FUEL_SECONDS = 30          # a full tank lasts this long (fuel_rate 1.0)
 BOOST_RECHARGE = 9.0       # seconds to refill an empty boost tank
@@ -246,15 +250,18 @@ def vehicle_stats(spec, levels):
 
     def up(pair, lv):
         return pair[0] + pair[1] * lv
+    g = GRAVITY_SCALE
     return dict(
-        torque=up(spec["torque"], e),
+        torque=up(spec["torque"], e) * g,
         max_spin=up(spec["spin"], e),
-        thrust=up(spec["thrust"], e),
-        spring=up(spec["spring"], s),
-        damping=up(spec["damping"], s),
+        thrust=up(spec["thrust"], e) * g,
+        spring=up(spec["spring"], s) * g,
+        damping=up(spec["damping"], s) * g ** 0.5,
         grip=spec["grip"] + 0.075 * t,
-        boost_force=up(spec["boost"], b),
+        boost_force=up(spec["boost"], b) * g,
         boost_seconds=2.0 + 0.35 * b,
+        air_torque=spec["air_torque"] * g,
+        gravity_scale=g,
     )
 
 

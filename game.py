@@ -2,8 +2,8 @@
 import math
 import random
 
-from config import (BOOST_RECHARGE, FLIP_BONUS, NECK_FLIP_BONUS, PHYS_DT, SEIZE_GRACE, SEIZE_RATE,
-                    vehicle_stats)
+from config import (BOOST_RECHARGE, FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, SEIZE_GRACE,
+                    SEIZE_RATE, vehicle_stats)
 from physics import Vehicle
 from render import Camera, Particles
 
@@ -96,7 +96,7 @@ class Run:
         self._acc += dt
         steps = 0
         while self._acc >= PHYS_DT and steps < 50:
-            car.step(PHYS_DT, g, b, self.boosting, self.terrain, st["gravity"], st["grip"])
+            car.step(PHYS_DT, g, b, self.boosting, self.terrain, st["gravity"] * GRAVITY_SCALE, st["grip"])
             self._acc -= PHYS_DT
             steps += 1
             if not car.grounded:

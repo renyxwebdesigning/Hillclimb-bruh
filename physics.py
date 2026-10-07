@@ -43,7 +43,7 @@ class Vehicle:
         self.HULL = spec["hull"]
         self.HEAD, self.HEAD_R = spec["head"], spec["head_r"]
         self.EXHAUST, self.NOZZLE = spec["exhaust"], spec["nozzle"]
-        self.air_torque = spec["air_torque"]
+        self.air_torque = stats.get("air_torque", spec["air_torque"])
         self.x, self.y = x, y
         self.vx = self.vy = 0.0
         self.angle = self.omega = 0.0
@@ -221,7 +221,7 @@ class Vehicle:
             w.omega += w.tq * w.inv_i * dt
             w.omega *= 1.0 - (0.15 if w.contact else 0.6) * dt
             if w.brake:
-                dw = 2600.0 * (w.m / 28.0) * w.inv_i * dt
+                dw = 2600.0 * st.get("gravity_scale", 1.0) * (w.m / 28.0) * w.inv_i * dt
                 w.omega = 0.0 if abs(w.omega) <= dw else w.omega - math.copysign(dw, w.omega)
 
         # Tyre grip: an impulse that cancels contact-patch slip, capped by friction.
@@ -269,7 +269,7 @@ def rest_wheel_offsets(spec, stats):
     out = []
     for ax, ay, r, m, share in spec["wheels"]:
         other = max(axs) if ax == min(axs) else min(axs)
-        load = spec["mass"] * 9.8 * abs(other - 0.0) / span
+        load = spec["mass"] * 9.8 * stats.get("gravity_scale", 1.0) * abs(other - 0.0) / span
         ext = spec["rest"] - load / stats["spring"]
         out.append((ax, ay - max(spec["ext"][0], ext), r))
     return out
