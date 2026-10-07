@@ -545,7 +545,7 @@ function show_infobox() {
         // tips
         var tips = [
             "Hold <b>SPACE</b> for a rocket boost",
-            "Engine seized? Hammer <b>ENTER</b> to fix it",
+            "Crash and your driver <b>swears</b>. Try not to!",
             "Press <b>H</b> to honk. Puppy or ship horn, your choice",
             "Land <b>flips</b> for bonus coins",
             "Secret trophies hide high in the air",
@@ -679,6 +679,109 @@ function show_infobox() {
         // after the page changes shape, re-fit the canvas
         d.addEventListener("fullscreenchange", function () { if (window.window_resize) window_resize(); });
         d.addEventListener("webkitfullscreenchange", function () { if (window.window_resize) window_resize(); });
+    })();
+    </script>
+
+    <script>
+    // Online play for the browser version: MQTT 3.1.1 (QoS 0) over a WebSocket to the same public brokers
+    // the download version uses over TCP. The game drives it through the hr_mq_* functions (relay.WebMQTT).
+    (function () {
+        var BROKERS = ["wss://broker.hivemq.com:8884/mqtt", "wss://broker.emqx.io:8084/mqtt",
+                       "wss://test.mosquitto.org:8081"];
+        var enc = new TextEncoder(), dec = new TextDecoder();
+        var M = { ws: null, ok: false, inbox: [], subs: {}, id: "", will: null, idx: 0, timer: null, stop: false,
+                  mid: 1, host: "", backoff: 1000 };
+
+        function varint(n) { var o = []; do { var b = n % 128; n = Math.floor(n / 128); o.push(b | (n ? 128 : 0)); } while (n); return o; }
+        function str(s) { var b = Array.from(enc.encode(s)); return [b.length >> 8, b.length & 255].concat(b); }
+        function pkt(type, body) { return [type].concat(varint(body.length), body); }
+        function send(bytes) {
+            if (!M.ws || M.ws.readyState !== 1) return false;
+            M.ws.send(new Uint8Array(bytes));
+            return true;
+        }
+        function sub(topic) { M.mid = M.mid % 60000 + 1; send(pkt(0x82, [M.mid >> 8, M.mid & 255].concat(str(topic), [0]))); }
+
+        function connect() {
+            if (M.stop) return;
+            var url = BROKERS[M.idx % BROKERS.length];
+            M.idx++;
+            var ws;
+            try { ws = new WebSocket(url, ["mqtt"]); } catch (e) { return retry(); }
+            ws.binaryType = "arraybuffer";
+            M.ws = ws;
+            var buf = [];
+            ws.onopen = function () {
+                var flags = 0x02, payload = str(M.id);
+                if (M.will) {
+                    flags |= 0x04 | (M.will[2] ? 0x20 : 0);
+                    payload = payload.concat(str(M.will[0]), str(M.will[1]));
+                }
+                send(pkt(0x10, str("MQTT").concat([4, flags, 0, 30], payload)));
+            };
+            ws.onmessage = function (e) {
+                buf = buf.concat(Array.from(new Uint8Array(e.data)));
+                while (buf.length >= 2) {
+                    var mult = 1, len = 0, i = 1, b;
+                    do {
+                        if (i >= buf.length) return;
+                        b = buf[i++]; len += (b & 127) * mult; mult *= 128;
+                    } while (b & 128);
+                    if (buf.length < i + len) return;
+                    var head = buf[0], body = buf.slice(i, i + len);
+                    buf = buf.slice(i + len);
+                    var type = head >> 4;
+                    if (type === 2) {                                   // CONNACK
+                        if (body[1] !== 0) { ws.close(); return; }
+                        M.ok = true; M.host = url; M.backoff = 1000;
+                        Object.keys(M.subs).forEach(sub);
+                        if (M.timer) clearInterval(M.timer);
+                        M.timer = setInterval(function () { send([0xc0, 0]); }, 15000);
+                    } else if (type === 3) {                            // PUBLISH
+                        var tl = (body[0] << 8) | body[1];
+                        var topic = dec.decode(new Uint8Array(body.slice(2, 2 + tl)));
+                        var off = 2 + tl + ((head & 6) ? 2 : 0);
+                        M.inbox.push([topic, dec.decode(new Uint8Array(body.slice(off)))]);
+                        if (M.inbox.length > 3000) M.inbox.splice(0, 1500);
+                    }
+                }
+            };
+            ws.onclose = function () { if (M.ws === ws) { M.ok = false; M.ws = null; retry(); } };
+            ws.onerror = function () { try { ws.close(); } catch (e) {} };
+        }
+        function retry() {
+            if (M.stop) return;
+            M.backoff = Math.min(10000, M.backoff * 1.6);
+            setTimeout(connect, M.backoff);
+        }
+
+        window.hr_mq_connect = function (id, wt, wp, wr) {
+            M.id = id; M.will = wt ? [wt, wp, !!wr] : null; M.stop = false; connect(); return 1;
+        };
+        window.hr_mq_will = function (wt, wp, wr) { M.will = [wt, wp, !!wr]; return 1; };
+        window.hr_mq_pub = function (topic, payload, retain) {
+            return send(pkt(0x30 | (retain ? 1 : 0), str(topic).concat(Array.from(enc.encode(payload))))) ? 1 : 0;
+        };
+        window.hr_mq_sub = function (topic) { M.subs[topic] = 1; if (M.ok) sub(topic); return 1; };
+        window.hr_mq_unsub = function (topic) {
+            delete M.subs[topic];
+            if (M.ok) { M.mid = M.mid % 60000 + 1; send(pkt(0xa2, [M.mid >> 8, M.mid & 255].concat(str(topic)))); }
+            return 1;
+        };
+        window.hr_mq_poll = function () {
+            if (!M.inbox.length) return "";
+            var s = JSON.stringify(M.inbox);
+            M.inbox = [];
+            return s;
+        };
+        window.hr_mq_state = function () { return M.ok ? 1 : 0; };
+        window.hr_mq_host = function () { return M.host; };
+        window.hr_mq_close = function () {
+            M.stop = true;
+            if (M.ws) { send([0xe0, 0]); M.ws.close(); }
+            M.ok = false;
+            return 1;
+        };
     })();
     </script>
 

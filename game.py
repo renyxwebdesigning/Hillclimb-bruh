@@ -1,9 +1,8 @@
-"""One run on a stage: physics, pickups, stunts, Kolbenklemmer, horn, races."""
+"""One run on a stage: physics, pickups, stunts, horn, races."""
 import math
 import random
 
-from config import (BOOST_RECHARGE, FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, SEIZE_GRACE,
-                    SEIZE_RATE, vehicle_stats)
+from config import BOOST_RECHARGE, FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, vehicle_stats
 from physics import Vehicle
 from render import Camera, Particles
 
@@ -48,12 +47,6 @@ class Run:
         self.time = 0.0
         self.race_time = 0.0
         self.respawn_t = None
-        # Kolbenklemmer
-        self.seized = False
-        self.fix_needed = 0
-        self.fix_count = 0
-        self.fix_shake = 0.0
-        self._safe_until = SEIZE_GRACE
         self.bubble = None              # (text, seconds left)
         self.lights_on = False
         self.lights_forced = None       # None = automatic
@@ -66,7 +59,6 @@ class Run:
         self._flip_t = 0.0
         self._land_vy = 0.0
         self._exhaust_t = 0.0
-        self._smoke_t = 0.0
         self._horn_t = 0.0
         self._coin_sound_t = 0.0
         self._last_count = 4
@@ -91,7 +83,6 @@ class Run:
         else:
             self.boost = min(1.0, self.boost + dt / BOOST_RECHARGE)
         self.audio.boost(self.boosting)
-        car.engine_on = not self.seized
 
         self._acc += dt
         steps = 0
@@ -117,7 +108,6 @@ class Run:
             else:
                 self._pickups()
                 self._stunts(dt)
-                self._maybe_seize(dt, g)
                 self._check_finish()
                 self._check_lava()
                 self._check_flipped(dt)
@@ -128,7 +118,6 @@ class Run:
 
         if self.bubble:
             self.bubble = (self.bubble[0], self.bubble[1] - dt) if self.bubble[1] > dt else None
-        self.fix_shake = max(0.0, self.fix_shake - dt)
         self._horn_t = max(0.0, self._horn_t - dt)
         self.distance = max(self.distance, int(max(0.0, car.x - START_X)))
         if self.state == "drive":
@@ -160,8 +149,15 @@ class Run:
             self.audio.play("go" if n <= 0 else "count")
 
     # ------------------------------------------------------------- crashing
+    def _swear(self):
+        """The driver shouts a line (and other online players hear it too)."""
+        text, line = self.audio.say(self.driver)
+        self.bubble = (text, 2.6)
+        return line
+
     def _crash(self):
         self.audio.play("crash")
+        line = self._swear()
         x, y = self.car.to_world(*self.car.HEAD)
         for _ in range(18):
             self.particles.add("chunk", x, y, random.uniform(-3, 3), random.uniform(1, 5), 0.9,
@@ -170,7 +166,7 @@ class Run:
             # Online nobody drops out: shake it off and get back on the road.
             self.respawn_t = 1.6
             self.hud.notice("DRIVER DOWN!", (255, 90, 70))
-            self.outbox.append({"kind": "crash"})
+            self.outbox.append({"kind": "crash", "line": line})
         else:
             self.finish("DRIVER DOWN!")
 
@@ -178,13 +174,14 @@ class Run:
         pit = self.terrain.pit_at(self.car.x)
         if pit and min(w.y - w.r for w in self.car.wheels) < pit[2] + 0.1:
             self.audio.play("crash")
+            line = self._swear()
             for _ in range(24):
                 self.particles.add("spark", self.car.x, pit[2], random.uniform(-3, 3), random.uniform(2, 7), 0.8,
                                    0.09, random.choice(((255, 200, 60), (255, 110, 20), (255, 60, 20))), grav=8)
             if self.online:
                 self.respawn_t = 1.2
                 self.hud.notice("BURNED!", (255, 120, 40))
-                self.outbox.append({"kind": "crash"})
+                self.outbox.append({"kind": "crash", "line": line})
             else:
                 self.finish("BURNED IN LAVA!")
 
@@ -201,6 +198,7 @@ class Run:
             self.hud.notice("FLIPPED!", (255, 176, 40))
         else:
             self.audio.play("crash")
+            self._swear()
             self.finish("FLIPPED OVER!")
 
     def _respawn(self):
@@ -214,7 +212,6 @@ class Run:
         elif self.terrain.feature_at(x, 2.0) == "tunnel":
             x = self.car.x
         self.car = Vehicle(x, self.terrain.height(x) + self._lift + 0.2, self.spec, self.stats)
-        self.car.engine_on = not self.seized
 
     def finish(self, reason):
         if self.state != "drive":
@@ -233,44 +230,6 @@ class Run:
             self.audio.play("finish")
             self.hud.notice("FINISH!", (255, 220, 60))
             self.outbox.append({"kind": "finish", "time": round(self.race_time, 3)})
-
-    # ---------------------------------------------------------- Kolbenklemmer
-    def _maybe_seize(self, dt, gas):
-        if self.seized or self.time < self._safe_until or not gas or self.countdown > 0:
-            return
-        if random.random() < SEIZE_RATE * dt:
-            self.seize()
-
-    def seize(self):
-        self.seized = True
-        self.fix_needed = random.randint(5, 30)
-        self.fix_count = 0
-        self.car.engine_on = False
-        self.audio.play("seize")
-        text, line = self.audio.say(self.driver)
-        self.bubble = (text, 3.0)
-        self.outbox.append({"kind": "seize", "line": line})
-
-    def repair(self):
-        """One whack with the spanner (Enter)."""
-        if not self.seized or self.state != "drive":
-            return
-        self.fix_count += 1
-        self.fix_shake = 0.18
-        self.audio.play("wrench")
-        x, y = self.car.to_world(*self.spec["engine"])
-        for _ in range(6):
-            self.particles.add("spark", x, y, random.uniform(-3, 3), random.uniform(1, 4), 0.35, 0.06,
-                               (255, 230, 140), grav=6, back=False)
-        if self.fix_count >= self.fix_needed:
-            self.seized = False
-            self.car.engine_on = True
-            self._safe_until = self.time + SEIZE_GRACE * 2
-            self.audio.play("restart")
-            self.hud.notice("FIXED!", (120, 230, 90))
-            self.outbox.append({"kind": "fixed"})
-            if self.progress:
-                self.progress.fixed(self)
 
     # --------------------------------------------------------------- horn
     def honk(self):
@@ -378,8 +337,6 @@ class Run:
             self._wobble_v[i] += ((target - self.wobble[i]) * 160 - self._wobble_v[i] * 12) * dt
             self.wobble[i] += self._wobble_v[i] * dt
         self.wobble[2] = -self.wobble[0] * 1.8
-        if self.fix_shake > 0:
-            self.wobble[1] += math.sin(self.time * 70) * 0.03
 
     def _effects(self, dt, gas):
         car, st = self.car, self.stage
@@ -404,11 +361,6 @@ class Run:
             if st["decor"] != "space" and random.random() < 0.5:
                 self.particles.add("smoke", x - c * 0.9, y - s * 0.9, -c * 2 + car.vx * 0.3, -s * 2 + 0.4, 0.9, 0.16,
                                    (190, 190, 196), grav=-0.6)
-        if self.seized:
-            self._smoke_t -= dt
-            if self._smoke_t <= 0:
-                self._smoke_t = 0.05
-                black_smoke(self.particles, car, self.spec)
         self._exhaust_t -= dt
         if gas and car.engine_on and st["decor"] != "space" and self._exhaust_t <= 0 and not car.thrusting:
             self._exhaust_t = 0.07
@@ -417,10 +369,3 @@ class Run:
             self.particles.add("smoke", x, y, -1.4 * c + car.vx * 0.2, 0.5 + car.vy * 0.2, 0.8, 0.13,
                                (150, 150, 156), grav=-0.8)
 
-
-def black_smoke(particles, car, spec):
-    """Thick black smoke pouring out of a seized engine."""
-    x, y = car.to_world(*spec["engine"])
-    particles.add("smoke", x + random.uniform(-0.15, 0.15), y, random.uniform(-0.6, 0.6) + car.vx * 0.3,
-                  random.uniform(1.0, 2.0), random.uniform(1.2, 1.8), random.uniform(0.18, 0.28),
-                  random.choice(((28, 28, 30), (45, 44, 46), (60, 58, 60))), grav=-1.5, back=False)

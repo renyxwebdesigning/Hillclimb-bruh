@@ -8,7 +8,7 @@
 """Hill Rider: a 2D hill-climb driving game.
 
 Right / D / Up = gas, Left / A / Down = brake (in the air they tilt the car).
-Space = boost, H = horn, L = lights, Enter = whack a seized engine.
+Space = boost, H = horn, L = lights.
 Esc or P pauses, M toggles music. Online play: "PLAY ONLINE" on the start screen.
 """
 import math
@@ -37,11 +37,11 @@ import ui  # noqa: E402
 from audio import Audio  # noqa: E402
 from config import FPS, STAGE_BY_KEY, TITLE, VEHICLE_BY_KEY, WEB  # noqa: E402
 from drivers import DRIVER_BY_KEY  # noqa: E402
-from game import Run, black_smoke  # noqa: E402
+from game import Run  # noqa: E402
 from hud import Hud  # noqa: E402
 from online import Session  # noqa: E402
 from progress import Progress  # noqa: E402
-from relay import OfflineRelay, Relay  # noqa: E402
+from relay import Relay  # noqa: E402
 from render import Art, CarView, WorldRenderer  # noqa: E402
 from terrain import Terrain  # noqa: E402
 
@@ -72,7 +72,8 @@ def window_size():
 
 class App:
     def __init__(self):
-        pygame.mixer.pre_init(44100, -16, 2, 512)
+        # a roomier buffer stops crackling when a frame takes long (phones, the browser)
+        pygame.mixer.pre_init(44100, -16, 2, 2048 if WEB else 1024)
         pygame.init()
         w, h = window_size()
         try:
@@ -112,8 +113,9 @@ class App:
                 self.data["fullscreen"] = False
         self.progress = Progress(self)
         self.data.setdefault("best_vehicle", {})
-        self.relay = (OfflineRelay if WEB else Relay)(self.data["player_id"], self.data.get("name") or "Player")
+        self.relay = Relay(self.data["player_id"], self.data.get("name") or "Player")
         self.fingers = {}
+        self.web = WEB
         for st_key, best in self.data["best"].items():
             if best > 0:
                 self.relay.post_best(st_key, best, self.data["best_vehicle"].get(st_key, "jeep"))
@@ -218,6 +220,7 @@ class App:
         self.audio.engine_stop()
         self.audio.music("menu")
         self.pause = None
+        ui.KEYBOARD.close()
         self.state = state
         if state == "online":
             self.screens["online"].enter(message)
@@ -414,6 +417,8 @@ class App:
                 self.toggle_music()
             elif ev.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
                 self.touch(ev)
+            elif ui.KEYBOARD.handle(ev, self):
+                continue
             else:
                 self.handle(ev)
         if not self.running:
@@ -430,6 +435,8 @@ class App:
             self.results.draw(self.screen, mouse, self.now, dt)
         # on the results screen the top holds the big banner: show cards between score panel and buttons
         self.hud.draw_toasts(self.screen, dt, gfx.s(496) if self.state == "results" else None)
+        if self.state in ("online", "lobby"):
+            ui.KEYBOARD.draw(self.screen, self, mouse)
         if self.invite is not None:
             self.invite_popup.draw(self.screen, mouse, self.invite)
         if WEB:
@@ -513,12 +520,10 @@ class App:
         if self.pause is not None or (self.session and self.session.results is not None):
             return                                    # menus on top get the taps as mouse clicks
         pos = (ev.x * gfx.W, ev.y * gfx.H)
-        hit = self.hud.hit(pos, self.run.seized, self.fs_available())
+        hit = self.hud.hit(pos, self.fs_available())
         if ev.type == pygame.FINGERDOWN:
             if hit == "fullscreen":
                 self.toggle_fullscreen()
-            elif hit == "repair":
-                self.run.repair()
             elif hit == "horn":
                 self.run.honk()
             elif hit == "pause":
@@ -619,8 +624,6 @@ class App:
         if ev.type == pygame.KEYDOWN:
             if ev.key in (pygame.K_ESCAPE, pygame.K_p):
                 self.open_pause()
-            elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                run.repair()
             elif ev.key == pygame.K_h:
                 run.honk()
             elif ev.key == pygame.K_l:
@@ -628,13 +631,11 @@ class App:
             elif ev.key == pygame.K_r and not run.online:
                 self.start_run()
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            hit = self.hud.hit(ev.pos, run.seized, self.fs_available())
+            hit = self.hud.hit(ev.pos, self.fs_available())
             if hit == "fullscreen":
                 self.toggle_fullscreen()
             elif hit == "pause":
                 self.open_pause()
-            elif hit == "repair":
-                run.repair()
             elif hit == "horn":
                 run.honk()
             else:
@@ -728,12 +729,11 @@ class App:
             kind = ev.get("kind")
             if kind == "horn":
                 self.audio.play("horn_" + ev.get("horn", "puppy"), vol)
-            elif kind == "seize":
-                text, _ = self.audio.say(p["driver"], vol, ev.get("line"))
-                self.remote_bubbles[pid] = [text, 3.0]
-                self.audio.play("seize", vol * 0.7)
             elif kind == "crash":
                 self.audio.play("crash", vol * 0.6)
+                if ev.get("line") is not None:
+                    text, _ = self.audio.say(p["driver"], vol, ev.get("line"))
+                    self.remote_bubbles[pid] = [text, 2.6]
             elif kind == "finish":
                 self.hud.notice(f"{p['name']} FINISHED!", p["color"])
         ses.events.clear()
@@ -745,8 +745,6 @@ class App:
             p = ses.players.get(pid)
             if p is None or not car.ready:
                 continue
-            if car.seized and smoke_now:
-                black_smoke(run.particles, car, car.spec)
             bubble = self.remote_bubbles.get(pid)
             if bubble:
                 bubble[1] -= dt

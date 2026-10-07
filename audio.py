@@ -5,9 +5,7 @@ mixer channel, so pitch follows RPM smoothly instead of crossfading loops.
 If there is no sound device the game runs silently.
 """
 import random
-import shutil
 from pathlib import Path
-import subprocess
 import threading
 from collections import deque
 
@@ -19,7 +17,9 @@ from config import WEB
 from drivers import DRIVERS
 
 SR = 44100
-CHUNK = 1764            # 40 ms of engine audio per queued chunk
+# Engine audio is streamed one chunk ahead; a chunk must outlast the slowest frame or the sound
+# runs dry and crackles (the browser often runs at 20-30 frames per second).
+CHUNK = 4410 if WEB else 2205          # 100 ms / 50 ms
 
 # Firing-frequency range (Hz), spectral tilt, sub-harmonic (uneven firing)
 # amount, two exhaust resonances (centre Hz, width Hz, gain), combustion noise.
@@ -203,45 +203,6 @@ def _ship_horn():
     return out / np.abs(out).max() * 0.95
 
 
-def _seize():
-    n = int(SR * 0.9)
-    t = np.arange(n) / SR
-    f = 260 * np.exp(-t * 2.2) + 40
-    ph = 2 * np.pi * np.cumsum(f) / SR
-    grind = np.sign(np.sin(ph)) * 0.4 * np.exp(-t * 2.5)
-    bang = _noise(0.25, 14, 3, 6) * 1.0
-    clank = sum(np.sin(2 * np.pi * fr * t) * np.exp(-t * 9) for fr in (523, 1187, 2011)) * 0.25
-    return _mix(grind, bang, clank)
-
-
-def _wrench():
-    n = int(SR * 0.28)
-    t = np.arange(n) / SR
-    y = sum(a * np.sin(2 * np.pi * fr * t) * np.exp(-t * d) for fr, a, d in
-            ((2350, 0.5, 18), (3720, 0.35, 24), (5230, 0.25, 30), (870, 0.3, 14)))
-    return _mix(y, _noise(0.03, 120, 2, 9) * 0.5)
-
-
-def _restart():
-    n = int(SR * 0.8)
-    t = np.arange(n) / SR
-    f = 22 + 70 * (t / 0.8) ** 0.6
-    ph = 2 * np.pi * np.cumsum(f) / SR
-    y = sum((1 / k) * np.sin(k * ph) for k in range(1, 12)) * np.minimum(1, t / 0.05) * np.clip((0.8 - t) / 0.2, 0, 1)
-    return y * 0.7
-
-
-def _loud(snd, drive):
-    """Normalise and gently saturate a sound so it is loud and punchy."""
-    try:
-        a = pygame.sndarray.array(snd).astype(np.float64) / 32768
-    except (pygame.error, ValueError):
-        return snd
-    a /= np.abs(a).max() + 1e-9
-    a = np.tanh(a * drive) / np.tanh(drive)
-    return pygame.sndarray.make_sound(np.ascontiguousarray((a * 32000).astype(np.int16)))
-
-
 def _crash():
     """Thump, metal crunch and a little glass."""
     n = int(SR * 0.9)
@@ -261,35 +222,10 @@ def _crash():
 
 
 class Voices:
-    """Driver swear lines, spoken by espeak and cached as WAV files."""
+    """Driver swear lines: natural recordings made with Piper (tools/make_voices.py), bundled in assets/voice."""
 
     def __init__(self):
-        self.dir = music.CACHE / "voice"
         self.sounds = {}
-        self.espeak = None if WEB else (shutil.which("espeak-ng") or shutil.which("espeak"))
-        if self.espeak:
-            threading.Thread(target=self._build, daemon=True).start()
-
-    def _path(self, key, i):
-        return self.dir / f"{key}_{i}_v1.wav"
-
-    def _build(self):
-        if not self.espeak:
-            return
-        try:
-            self.dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            return
-        for d in DRIVERS:
-            voice, pitch, speed = d["voice"]
-            for i, line in enumerate(d["lines"]):
-                path = self._path(d["key"], i)
-                if not path.exists():
-                    try:
-                        subprocess.run([self.espeak, "-v", voice, "-p", str(pitch), "-s", str(speed), "-a", "180",
-                                        "-w", str(path), line], timeout=10, capture_output=True)
-                    except (OSError, subprocess.SubprocessError):
-                        continue
 
     def say(self, key, index=None):
         """Pick a line for the driver; returns (text, Sound or None, index)."""
@@ -300,11 +236,9 @@ class Voices:
         if snd is None:
             from gfx import resource
             path = Path(resource("assets", "voice", f"{key}_{i}.wav"))
-            if not path.exists():
-                path = self._path(key, i)
             if path.exists():
                 try:
-                    snd = self.sounds[(key, i)] = _loud(pygame.mixer.Sound(str(path)), 3.0)
+                    snd = self.sounds[(key, i)] = pygame.mixer.Sound(str(path))
                 except pygame.error:
                     snd = None
         return d["lines"][i], snd, i
@@ -321,15 +255,16 @@ class Audio:
         self.synth = None
         try:
             if not pygame.mixer.get_init():
-                pygame.mixer.init(SR, -16, 2, 512)
+                pygame.mixer.init(SR, -16, 2, 2048 if WEB else 1024)
             pygame.mixer.set_num_channels(32)
-            pygame.mixer.set_reserved(3)
+            pygame.mixer.set_reserved(4)
         except pygame.error:
             return
         self.ok = True
         self.engine_ch = pygame.mixer.Channel(0)
         self.boost_ch = pygame.mixer.Channel(1)
-        self.music_ch = pygame.mixer.Channel(2)
+        self.music_chs = [pygame.mixer.Channel(2), pygame.mixer.Channel(3)]   # two, to crossfade tracks
+        self.music_ch = self.music_chs[0]
         self._recent = deque(maxlen=6)
         self.fx = {
             "coin": _to_sound(self._arpeggio([1568, 2093], 0.045), 0.3),
@@ -345,9 +280,6 @@ class Audio:
             "horn_puppy": _to_sound(np.tanh(_puppy_horn() * 2.2) / np.tanh(2.2), 1.0),
             "horn_ship": _to_sound(np.tanh(_ship_horn() * 2.0) / np.tanh(2.0), 1.0),
             "horn_siren": _to_sound(self._siren(), 0.95),
-            "seize": _to_sound(_seize(), 0.75),
-            "wrench": _to_sound(_wrench(), 0.55),
-            "restart": _to_sound(_restart(), 0.6),
             "count": _to_sound(_tone(660, 0.18, 10, "square"), 0.3),
             "go": _to_sound(_tone(1320, 0.45, 5, "square"), 0.32),
             "finish": _to_sound(self._arpeggio([523, 659, 784, 1046, 1318], 0.09), 0.5),
@@ -509,9 +441,12 @@ class Audio:
         if not self.ok or name == self.track:
             return
         self.track = name
-        self.music_ch.fadeout(400)
+        # fade the old track out on its own channel while the new one fades in on the other
+        self.music_ch.fadeout(700)
         if name and self.music_on:
             if name in self.tracks:
+                self.music_ch = self.music_chs[1] if self.music_ch is self.music_chs[0] else self.music_chs[0]
+                self.music_ch.stop()
                 self.music_ch.play(self.tracks[name], loops=-1, fade_ms=900)
                 self._apply_music_volume()
             else:
@@ -525,4 +460,5 @@ class Audio:
             current, self.track = self.track, None
             self.music(current)
         else:
-            self.music_ch.fadeout(300)
+            for ch in self.music_chs:
+                ch.fadeout(300)

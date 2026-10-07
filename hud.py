@@ -1,4 +1,4 @@
-"""In-game heads-up display: distance, coins, pedals, gauges, pop-ups, repairs, races."""
+"""In-game heads-up display: distance, coins, pedals, gauges, pop-ups, races."""
 import math
 
 import pygame
@@ -141,17 +141,6 @@ def _horn_button(r, kind):
     return gfx.supersample(2 * r + 2, 2 * r + 2, draw)
 
 
-def _wrench(h):
-    def draw(surf, k):
-        W, H = surf.get_size()
-        col = (200, 206, 214)
-        pygame.draw.line(surf, col, (W * 0.25, H * 0.75), (W * 0.62, H * 0.38), max(1, int(W * 0.14)))
-        pygame.draw.circle(surf, col, (W * 0.68, H * 0.32), W * 0.2)
-        pygame.draw.circle(surf, (0, 0, 0, 0), (W * 0.78, H * 0.22), W * 0.12)
-        pygame.draw.circle(surf, col, (W * 0.25, H * 0.75), W * 0.08)
-    return gfx.supersample(h, h, draw)
-
-
 class Popup:
     def __init__(self, title, amount):
         self.title, self.amount, self.t = title, amount, 0.0
@@ -167,7 +156,6 @@ class Hud:
         self.boost_face = _gauge_face(s(60), "boost")
         self.boost_btn = {lit: _boost_button(s(54 * k), lit) for lit in (False, True)}
         self.horn_btn = {kind: _horn_button(s(40 * k), kind) for kind in ("puppy", "ship")}
-        self.wrench = _wrench(s(70))
         self.pause_img = _pause_icon(s(27))
         self.ruler_img = _ruler_icon(s(24))
         self.coin_img = sprites.coin(5, si(13))
@@ -184,8 +172,6 @@ class Hud:
         self.boost_rect = self.boost_btn[False].get_rect(center=(self.brake_rect.centerx, self.brake_rect.top - s(78 * k)))
         self.horn_rect = self.horn_btn["puppy"].get_rect(center=(self.gas_rect.centerx, self.gas_rect.top - s(62 * k)))
         self.touch_mode = False             # set once a finger touches the screen: show tap hints
-        self.fix_rect = pygame.Rect(0, 0, s(500), s(196))
-        self.fix_rect.midtop = (W / 2, s(84))
 
     def bonus(self, title, amount):
         self.popups.append(Popup(title, amount))
@@ -240,9 +226,9 @@ class Hud:
         self._draw_info(surf, run, race)
         surf.blit(self.boost_btn[run.boosting], self.boost_rect)
         surf.blit(self.horn_btn[run.horn_kind], self.horn_rect)
-        if run.time < 7 and run.state == "drive" and run.countdown <= 0 and not run.seized and not self.touch_mode:
+        if run.time < 7 and run.state == "drive" and run.countdown <= 0 and not self.touch_mode:
             a = int(255 * min(1.0, (7 - run.time) / 1.0))
-            img = gfx.text("cond_i", 22, "SPACE boost  ·  H horn  ·  L lights  ·  ENTER fixes a seized engine",
+            img = gfx.text("cond_i", 22, "SPACE boost  ·  H horn  ·  L lights  ·  ESC pause",
                            WHITE, outline=INK, width=2).copy()
             img.set_alpha(a)
             surf.blit(img, img.get_rect(center=(gfx.W / 2, s(150))))
@@ -261,8 +247,6 @@ class Hud:
             pygame.draw.circle(surf, gfx.mix((255, 120, 20), (255, 220, 80), glow), (cx + s(76), by), s(64))
         self._gauge(surf, self.boost_face, (cx + s(76), by), run.boost)
         self._draw_popups(surf)
-        if run.seized and run.state == "drive":
-            self._draw_seized(surf, run, now)
         if run.countdown > 0:
             n = math.ceil(run.countdown - 0.4)
             label = str(n) if n > 0 else "GO!"
@@ -277,26 +261,6 @@ class Hud:
             img = pygame.transform.smoothscale_by(img, 1.4 - 0.4 * k).copy()
             img.set_alpha(int(255 * min(1.0, (1.6 - t) / 0.4)))
             surf.blit(img, img.get_rect(center=(gfx.W / 2, gfx.H * 0.3 + i * s(80))))
-
-    def _draw_seized(self, surf, run, now):
-        r = self.fix_rect.move(math.sin(now * 40) * s(3) if run.fix_shake > 0 else 0, 0)
-        box = pygame.Surface(r.size, pygame.SRCALPHA)
-        pygame.draw.rect(box, (20, 18, 18, 215), box.get_rect(), border_radius=si(18))
-        pygame.draw.rect(box, (230, 50, 40, 255), box.get_rect(), si(4), border_radius=si(18))
-        surf.blit(box, r)
-        pulse = 1 + 0.06 * math.sin(now * 10)
-        title = pygame.transform.smoothscale_by(
-            gfx.text("black_i", 50, "KOLBENKLEMMER!", (255, 70, 50), outline=INK, width=3), pulse)
-        surf.blit(title, title.get_rect(center=(r.centerx, r.y + s(46))))
-        how = "Tap this box again and again to fix it!" if self.touch_mode else "Hammer ENTER to fix the engine!"
-        gfx.blit_text(surf, "cond", 24, how, WHITE, (r.centerx, r.y + s(100)), "center")
-        ang = -30 + (40 if run.fix_shake > 0 else 0) + 6 * math.sin(now * 6)
-        w = pygame.transform.rotozoom(self.wrench, ang, 1.0)
-        surf.blit(w, w.get_rect(center=(r.x + s(70), r.y + s(150))))
-        gfx.blit_text(surf, "cond", 30, f"Hits: {run.fix_count}", (255, 220, 80), (r.centerx, r.y + s(150)), "center",
-                      outline=INK, width=2)
-        gfx.blit_text(surf, "cond_i", 17, "(how many? nobody knows...)", (190, 190, 196),
-                      (r.centerx, r.y + s(182)), "center")
 
     def _draw_info(self, surf, run, race):
         x, y = s(16), s(12)
@@ -394,9 +358,7 @@ class Hud:
         img.set_alpha(int(255 * k))
         surf.blit(img, img.get_rect(center=(gfx.W / 2, gfx.H * 0.36)))
 
-    def hit(self, pos, seized=False, fullscreen=False):
-        if seized and self.fix_rect.collidepoint(pos):
-            return "repair"
+    def hit(self, pos, fullscreen=False):
         if self.pause_rect.inflate(s(16), s(16)).collidepoint(pos):
             return "pause"
         if fullscreen and self.fs_rect.inflate(s(10), s(10)).collidepoint(pos):

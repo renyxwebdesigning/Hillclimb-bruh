@@ -17,7 +17,6 @@ ACHIEVEMENTS = [
     ("explorer", "Explorer", "Drive 3000 m in one run", 8000, ("best_distance", 3000)),
     ("treasure", "Treasure Hunter", "Find 5 secret trophies", 3000, ("trophies", 5)),
     ("trophy_master", "Trophy Master", "Find all 40 secret trophies", 25000, ("trophies", 40)),
-    ("mechanic", "Mechanic", "Fix 5 seized engines", 1500, ("fixes", 5)),
     ("moonwalker", "Moon Walker", "Drive 500 m on the Moon", 2000, ("moon_best", 500)),
     ("lava_jumper", "Lava Jumper", "Jump 5 lava pits in one run", 5000, ("best_pits", 5)),
     ("rich", "Rich", "Earn 50,000 coins in total", 5000, ("coins_earned", 50000)),
@@ -96,10 +95,6 @@ class Progress:
         run.audio.play("finish")
         self.check(run)
         self.app.persist()
-
-    def fixed(self, run):
-        self._bump("fixes")
-        self.check(run)
 
     def live(self, run):
         """Called a few times a second during a run."""

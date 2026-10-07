@@ -64,7 +64,7 @@ class Button:
                              border_radius=rad)
             surf.blit(gloss, face.topleft)
         img = gfx.supersample(w, h, draw, ss=2)
-        size = 28 if h > s(56) else 24
+        size = 44 if h > s(100) else 28 if h > s(56) else 24
         lab = gfx.text("black_i", size, self.label, ink, outline=NAVY if ink == WHITE else None, width=2.5)
         if lab.get_width() > w - s(28):
             lab = pygame.transform.smoothscale_by(lab, (w - s(28)) / lab.get_width())
@@ -167,11 +167,12 @@ def top_bar(surf, app, title):
     pill(surf, cp)
     surf.blit(app.coin_icon, app.coin_icon.get_rect(midleft=(cp.x + s(8), cp.centery)))
     surf.blit(coins, coins.get_rect(midleft=(cp.x + app.coin_icon.get_width() + s(18), cp.centery)))
-    head = gfx.text("black_i", 36, title, WHITE, outline=NAVY, width=3, shadow=3)
-    room = gfx.W - 2 * s(430)                  # between the coin pill and the icons on the right
-    if head.get_width() > room:
-        head = pygame.transform.smoothscale_by(head, room / head.get_width())
-    surf.blit(head, head.get_rect(center=(gfx.W / 2, bar.centery)))
+    if title:
+        head = gfx.text("black_i", 36, title, WHITE, outline=NAVY, width=3, shadow=3)
+        room = gfx.W - 2 * s(430)              # between the coin pill and the icons on the right
+        if head.get_width() > room:
+            head = pygame.transform.smoothscale_by(head, room / head.get_width())
+        surf.blit(head, head.get_rect(center=(gfx.W / 2, bar.centery)))
     x = gfx.W - s(42)
     app.sound_rect = round_button(surf, app.speaker[app.data["sound"]], (x, bar.centery))
     x -= s(60)
@@ -837,7 +838,7 @@ class DriverSelect:
             if name.get_width() > r.w - s(14):
                 name = pygame.transform.smoothscale_by(name, (r.w - s(14)) / name.get_width())
             surf.blit(name, name.get_rect(center=(r.centerx, r.y + s(186))))
-        gfx.blit_text(surf, "cond", 18, "Pick who drives  ·  They will swear when the engine seizes!",
+        gfx.blit_text(surf, "cond", 18, "Pick who drives  ·  They will swear when they crash!",
                       HINT, (gfx.W / 2, s(584)), "center")
         pressed = pygame.mouse.get_pressed()[0]
         self.back_btn.draw(surf, mouse, pressed)
@@ -1087,13 +1088,16 @@ class PauseMenu:
 
 # ------------------------------------------------------------------ online
 class TextField:
-    def __init__(self, rect, text="", placeholder="", max_len=24):
+    def __init__(self, rect, text="", placeholder="", max_len=24, numeric=False):
         self.rect, self.text, self.placeholder, self.max_len = rect, text, placeholder, max_len
+        self.numeric = numeric
         self.active = False
 
     def handle(self, ev):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             self.active = self.rect.collidepoint(ev.pos)
+            if self.active:
+                KEYBOARD.open(self)
             return self.active
         if not self.active:
             return False
@@ -1127,6 +1131,131 @@ class TextField:
         if self.active and int(now * 2) % 2 == 0:
             cx = x + (img.get_width() if self.text else 0) + s(3)
             pygame.draw.line(surf, WHITE, (cx, r.y + s(10)), (cx, r.bottom - s(10)), si(2))
+
+
+class OnScreenKeyboard:
+    """A keyboard drawn by the game for phones and tablets: a number pad for player numbers, letters for names.
+    It types into the active TextField and sends Enter (KEYDOWN) when OK is pressed."""
+    LETTERS = ["1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
+
+    def __init__(self):
+        self.target = None
+        self.keys = []
+        self.panel = None
+
+    def open(self, field):
+        self.target = field
+        self.keys = []
+
+    def close(self):
+        if self.target is not None:
+            self.target.active = False
+        self.target = None
+
+    def visible(self, app):
+        t = self.target
+        return t is not None and t.active and (app.hud.touch_mode or getattr(app, "web", False))
+
+    def _layout(self):
+        numeric = self.target.numeric
+        h = s(300) if numeric else s(330)
+        self.panel = pygame.Rect(0, gfx.H - h, gfx.W, h)
+        keys = []
+        top = self.panel.y + s(72)
+        if numeric:
+            kw, kh, gap = s(150), s(50), s(10)
+            x0 = gfx.W / 2 - (3 * kw + 2 * gap) / 2
+            rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["DEL", "0", "OK"]]
+            for r, row in enumerate(rows):
+                for c, k in enumerate(row):
+                    keys.append((k, pygame.Rect(x0 + c * (kw + gap), top + r * (kh + gap), kw, kh)))
+        else:
+            kw, kh, gap = min(s(96), (gfx.W - s(40)) / 10 - s(8)), s(42), s(7)
+            for r, row in enumerate(self.LETTERS):
+                x0 = gfx.W / 2 - (len(row) * kw + (len(row) - 1) * gap) / 2
+                for c, k in enumerate(row):
+                    keys.append((k, pygame.Rect(x0 + c * (kw + gap), top + r * (kh + gap), kw, kh)))
+            y = top + 4 * (kh + gap)
+            x0 = gfx.W / 2 - (kw * 10 + gap * 9) / 2
+            keys.append(("DEL", pygame.Rect(x0, y, kw * 2 + gap, kh)))
+            keys.append(("SPACE", pygame.Rect(x0 + 2 * (kw + gap), y, kw * 5 + gap * 4, kh)))
+            keys.append(("OK", pygame.Rect(x0 + 7 * (kw + gap), y, kw * 3 + gap * 2, kh)))
+        self.keys = keys
+
+    def handle(self, ev, app):
+        """True when the event was meant for the keyboard."""
+        if not self.visible(app):
+            return False
+        if not self.keys:
+            self._layout()
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            if self.target.rect.collidepoint(ev.pos):
+                return True
+            if not self.panel.collidepoint(ev.pos):
+                self.close()
+                return False
+            for k, r in self.keys:
+                if r.inflate(s(6), s(6)).collidepoint(ev.pos):
+                    self.press(k, app)
+                    break
+            return True
+        if ev.type in (pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+            return self.panel.collidepoint(ev.pos)
+        return False
+
+    def press(self, k, app):
+        t = self.target
+        app.audio.play("click")
+        if k == "DEL":
+            t.text = t.text[:-1]
+        elif k == "OK":
+            # hide the keyboard but leave the field active, so the screen knows which field Enter is for
+            pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, mod=0, unicode="\r", scancode=0))
+            self.target = None
+        elif k == "SPACE":
+            t.text = (t.text + " ")[:t.max_len]
+        else:
+            t.text = (t.text + (k if not t.text or t.numeric else k.lower()))[:t.max_len]
+
+    def draw(self, surf, app, mouse):
+        if not self.visible(app):
+            return
+        if not self.keys:
+            self._layout()
+        p = self.panel
+        dim = pygame.Surface((gfx.W, p.y), pygame.SRCALPHA)
+        dim.fill((4, 12, 34, 120))
+        surf.blit(dim, (0, 0))
+        bg = gfx.vgradient(p.w, p.h, (30, 64, 128), (12, 30, 70))
+        surf.blit(bg, p)
+        pygame.draw.line(surf, PANEL_EDGE, p.topleft, p.topright, si(3))
+        # what you are typing, since the field itself may be hidden behind the keyboard
+        box = pygame.Rect(0, 0, min(s(560), gfx.W - s(40)), s(48))
+        box.midtop = (gfx.W / 2, p.y + s(12))
+        pygame.draw.rect(surf, NAVY, box, border_radius=si(12))
+        pygame.draw.rect(surf, GOLD, box, si(2), border_radius=si(12))
+        t = self.target
+        txt = gfx.text("heavy", 26, t.text or t.placeholder, WHITE if t.text else MUTED)
+        surf.blit(txt, txt.get_rect(midleft=(box.x + s(16), box.centery)))
+        if int(app.now * 2) % 2 == 0 and t.text:
+            cx = box.x + s(18) + txt.get_width()
+            pygame.draw.line(surf, WHITE, (cx, box.y + s(10)), (cx, box.bottom - s(10)), si(2))
+        for k, r in self.keys:
+            special = k in ("DEL", "OK")
+            down = pygame.mouse.get_pressed()[0] and r.collidepoint(mouse)
+            face = (84, 190, 46) if k == "OK" else (200, 70, 60) if k == "DEL" else (236, 242, 252)
+            rr = r.move(0, s(3) if down else 0)
+            pygame.draw.rect(surf, NAVY, r.move(0, s(4)), border_radius=si(10))
+            pygame.draw.rect(surf, face, rr, border_radius=si(10))
+            label = {"DEL": "DELETE" if t.numeric else "DEL", "SPACE": "space"}.get(k, k)
+            col = WHITE if special else NAVY
+            img = gfx.text("black_i" if special else "heavy", 24, label, col)
+            if img.get_width() > rr.w - s(8):
+                img = pygame.transform.smoothscale_by(img, (rr.w - s(8)) / img.get_width())
+            surf.blit(img, img.get_rect(center=rr.center))
+
+
+KEYBOARD = OnScreenKeyboard()
 
 
 class Selector:
@@ -1242,8 +1371,9 @@ class OnlineMenu:
         self.bg = background(gfx.W, gfx.H)
         L = gfx.W / 2 - s(600)
         self.name = TextField(pygame.Rect(L + s(20), s(230), s(360), s(48)), app.data.get("name", ""), "Your name", 16)
-        self.join_num = TextField(pygame.Rect(L + s(20), s(410), s(220), s(48)), "", "Number", 8)
-        self.friend_num = TextField(pygame.Rect(gfx.W / 2 + s(20), s(500), s(220), s(48)), "", "Number", 8)
+        self.join_num = TextField(pygame.Rect(L + s(20), s(410), s(220), s(48)), "", "Number", 8, numeric=True)
+        self.friend_num = TextField(pygame.Rect(gfx.W / 2 + s(20), s(500), s(220), s(48)), "", "Number", 8,
+                                    numeric=True)
         self.fields = [self.name, self.join_num, self.friend_num]
         self.host_btn = Button("HOST GAME", (L + s(200), s(320)), (360, 62), "green")
         self.join_btn = SmallButton("JOIN", pygame.Rect(L + s(256), s(410), s(124), s(48)), (36, 110, 210))
@@ -1289,10 +1419,6 @@ class OnlineMenu:
                     self._remember_name()
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if self.host_btn.hit(ev.pos):
-                from config import WEB
-                if WEB:
-                    self.status, self.status_ok = "Online play needs the download version of Hill Rider.", False
-                    return
                 self._remember_name()
                 app.audio.play("click")
                 app.host_game()
@@ -1323,10 +1449,6 @@ class OnlineMenu:
         self.app.audio.play("buy")
 
     def join(self, num):
-        from config import WEB
-        if WEB:
-            self.status, self.status_ok = "Online play needs the download version of Hill Rider.", False
-            return
         num = str(num).strip()
         if len(num) != 6:
             self.status, self.status_ok = "Type the host's 6-digit player number.", False
@@ -1378,7 +1500,7 @@ class Lobby:
         self.mode_sel = Selector("MODE", (cx, s(204)))
         self.vehicle_sel = Selector("YOUR VEHICLE", (cx, s(278)))
         self.driver_sel = Selector("YOUR DRIVER", (cx, s(352)))
-        self.invite_num = TextField(pygame.Rect(s(54), s(512), s(200), s(44)), "", "Player number", 8)
+        self.invite_num = TextField(pygame.Rect(s(54), s(512), s(200), s(44)), "", "Player number", 8, numeric=True)
         self.invite_btn = SmallButton("INVITE", pygame.Rect(s(266), s(512), s(110), s(44)), (36, 110, 210))
         self.leave_btn = Button("LEAVE", (s(170), gfx.H - s(56)), (230, 64), "gray")
         self.start_btn = Button("START", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green",
@@ -1719,7 +1841,7 @@ class Settings:
         glass(surf, keys)
         gfx.blit_text(surf, "cond", 20, "CONTROLS", WHITE, (keys.x + s(18), keys.y + s(12)))
         rows = [("Gas / Brake", "Right / Left  (or D / A)"), ("Boost  ·  Horn  ·  Lights", "Space  ·  H  ·  L"),
-                ("Fix seized engine", "Enter"), ("Pause / Music / Fullscreen", "Esc  ·  M  ·  F11")]
+                ("Pause", "Esc  ·  P"), ("Music / Fullscreen", "M  ·  F11")]
         for i, (what, key) in enumerate(rows):
             y = keys.y + s(44) + i * s(26)
             gfx.blit_text(surf, "cond", 17, what, MUTED, (keys.x + s(18), y))
@@ -1759,7 +1881,7 @@ class TrophyRoom:
         app = self.app
         data = app.data
         surf.blit(self.bg, (0, 0))
-        got = len(data["achievements"])
+        got = sum(a[0] in data["achievements"] for a in ACHIEVEMENTS)
         top_bar(surf, app, f"TROPHY ROOM  ·  {got}/{len(ACHIEVEMENTS)} ACHIEVEMENTS")
         cw, ch, gap = 228, 112, 12
         for i, (key, title, desc, reward, (st, target)) in enumerate(ACHIEVEMENTS):

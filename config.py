@@ -290,8 +290,6 @@ def coin_value_at(x):
 
 
 # ---------------------------------------------------------- events/online
-SEIZE_RATE = 1 / 55        # chance per second of full throttle that the engine seizes
-SEIZE_GRACE = 12.0         # no seizure in the first seconds, nor right after a repair
 RACE_DISTANCES = [500, 1000, 2000]
 DAY_LENGTH = 210.0         # seconds for a full day/night cycle
 

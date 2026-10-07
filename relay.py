@@ -10,6 +10,10 @@ addressed by their permanent player number:
 
 Only MQTT 3.1.1 with QoS 0 is needed, so the protocol is implemented here
 directly (no extra package to install). Messages are JSON.
+
+The browser version can't open TCP sockets: it talks MQTT over a WebSocket to
+the same brokers through a small client in the web page (web/loader.tmpl,
+hr_mq_*), so browser and download players meet in the same rooms.
 """
 import json
 import queue
@@ -194,6 +198,66 @@ class MQTT:
         self._drop()
 
 
+class WebMQTT:
+    """Same interface as MQTT, through the web page's WebSocket MQTT client (browser version)."""
+
+    def __init__(self, client_id, will=None, on_connect=None):
+        import platform as browser             # pygbag's bridge to the page
+        self.js = browser.window
+        self.on_connect = on_connect
+        self.subs = set()
+        self.broker = None
+        self._was_connected = False
+        self._will = will
+        topic, payload, retain = will or ("", b"", False)
+        self.js.hr_mq_connect(client_id, topic, payload.decode(), 1 if retain else 0)
+
+    @property
+    def will(self):
+        return self._will
+
+    @will.setter
+    def will(self, will):
+        self._will = will
+        topic, payload, retain = will
+        self.js.hr_mq_will(topic, payload.decode(), 1 if retain else 0)
+
+    @property
+    def connected(self):
+        return bool(self.js.hr_mq_state())
+
+    def publish(self, topic, payload, retain=False):
+        return bool(self.js.hr_mq_pub(topic, payload.decode(), 1 if retain else 0))
+
+    def subscribe(self, topic):
+        self.subs.add(topic)
+        self.js.hr_mq_sub(topic)
+
+    def unsubscribe(self, topic):
+        self.subs.discard(topic)
+        self.js.hr_mq_unsub(topic)
+
+    def poll(self):
+        now = self.connected
+        if now and not self._was_connected:
+            self.broker = str(self.js.hr_mq_host())
+            if self.on_connect:
+                self.on_connect()
+        self._was_connected = now
+        raw = self.js.hr_mq_poll()
+        out = []
+        if raw:
+            for topic, payload in json.loads(str(raw)):
+                try:
+                    out.append((topic, json.loads(payload)))
+                except ValueError:
+                    pass
+        return out
+
+    def close(self):
+        self.js.hr_mq_close()
+
+
 class Relay:
     """The game's permanent internet presence: player number, friends, invites, rooms."""
 
@@ -208,7 +272,8 @@ class Relay:
         self.rooms = {}             # host number -> callback list (room topic handlers)
         self._room_handlers = []
         will = (self._p(self.number), json.dumps({"name": name, "on": 0}).encode(), True)
-        self.mqtt = MQTT(f"hr-{self.number}-{int(time.time()) % 100000}", will, self._announce)
+        from config import WEB
+        self.mqtt = (WebMQTT if WEB else MQTT)(f"hr-{self.number}-{int(time.time()) % 100000}", will, self._announce)
         self.mqtt.subscribe(f"{PREFIX}/i/{self.number}")
 
     @staticmethod
@@ -285,12 +350,14 @@ class Relay:
 
     def close(self):
         self.mqtt.publish(self._p(self.number), json.dumps({"name": self.name, "on": 0}).encode(), retain=True)
-        time.sleep(0.05)
+        from config import WEB
+        if not WEB:
+            time.sleep(0.05)
         self.mqtt.close()
 
 
 class OfflineRelay:
-    """Stand-in used in the browser version, where online play isn't possible."""
+    """Stand-in with no internet at all (used by tests)."""
 
     online = False
     hosting = False

@@ -39,7 +39,7 @@ class RemoteCar:
         self.vx = self.vy = 0.0
         self.wheels = [RemoteWheel(w[2]) for w in spec["wheels"]]
         self.target = None
-        self.boosting = self.thrusting = self.seized = self.lights = self.respawning = False
+        self.boosting = self.thrusting = self.lights = self.respawning = False
         self.dist = 0
         self.ready = False
 
@@ -51,7 +51,7 @@ class RemoteCar:
         self.target = s
         flags = int(s[9])
         self.boosting, self.thrusting = bool(flags & 1), bool(flags & 2)
-        self.seized, self.lights, self.respawning = bool(flags & 4), bool(flags & 8), bool(flags & 16)
+        self.lights, self.respawning = bool(flags & 8), bool(flags & 16)
         self.dist = s[10]
         if not self.ready or abs(s[0] - self.x) > 25:
             self._snap()
@@ -87,7 +87,7 @@ class RemoteCar:
 
 def pack_state(run):
     car = run.car
-    flags = (1 if car.boosting else 0) | (2 if car.thrusting else 0) | (4 if run.seized else 0) \
+    flags = (1 if car.boosting else 0) | (2 if car.thrusting else 0) \
         | (8 if run.lights_on else 0) | (16 if run.respawn_t is not None else 0)
     s = [car.x, car.y, car.angle]
     for w in car.wheels[:2]:

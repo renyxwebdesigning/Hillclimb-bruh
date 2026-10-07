@@ -1,7 +1,7 @@
 """Selectable drivers: names, voices and swear lines; the faces are painted by portraits.py.
 
 Each driver has a head drawer, a voice for espeak and a few lines they
-shout when the engine seizes ("Kolbenklemmer").
+shout when they crash.
 """
 import math
 
@@ -9,29 +9,35 @@ import pygame
 
 import gfx
 
+# tts = (Piper voice model, speaker, speed): see tools/make_voices.py, which records the lines into
+# assets/voice. "say" is what the voice speaks when it differs from the speech bubble.
 DRIVERS = [
-    dict(key="default", name="Racer", voice=("de", 50, 165),
+    dict(key="default", name="Racer", tts=("de_DE-thorsten_emotional-medium", "angry", 1.0),
          lines=["Verdammt nochmal!", "So ein Mist!", "Nicht schon wieder!"]),
-    dict(key="trump", name="Tromald Dump", voice=("en-us", 32, 150),
-         lines=["Total disaster! Sad!", "This engine is fake news!", "Terrible, terrible engine!"]),
-    dict(key="putin", name="Plad Vutin", voice=("de", 22, 135),
-         lines=["Bljin!", "Tschort wasmi!", "Njet, njet, njet!"]),
-    dict(key="bonnie", name="Bunny Blue", voice=("en-us+f3", 70, 165),
+    dict(key="trump", name="Tromald Dump", tts=("en_US-norman-medium", None, 1.0),
+         lines=["Total disaster! Sad!", "This hill is fake news!", "Terrible, terrible hill!"]),
+    dict(key="putin", name="Plad Vutin", tts=("ru_RU-dmitri-medium", None, 1.1),
+         lines=["Bljin!", "Tschort wasmi!", "Njet, njet, njet!"],
+         say=["Блин!", "Чёрт возьми!", "Нет, нет, нет!"]),
+    dict(key="bonnie", name="Bunny Blue", tts=("en_GB-alba-medium", None, 0.95),
          lines=["Oh bloody hell!", "Are you kidding me?!", "Oh, for crying out loud!"]),
-    dict(key="mozart", name="Zotmard", voice=("de", 62, 180),
+    dict(key="mozart", name="Zotmard", tts=("de_DE-thorsten-high", None, 0.95),
          lines=["Sapperlot!", "Potz Blitz und Donnerwetter!", "Himmel, Arsch und Zwirn!"]),
-    dict(key="einstein", name="Zweistein", voice=("de", 45, 130),
+    dict(key="einstein", name="Zweistein", tts=("de_DE-karlsson-low", None, 1.1),
          lines=["Relativ kaputt!", "Gott würfelt doch!", "Donnerwetter!"]),
-    dict(key="roesti", name="Rollbert Rösti", voice=("de", 46, 160),
-         lines=["Gopferdammi!", "Huere Seich!", "Das isch jetzt nöd wahr!"]),
-    dict(key="blocher", name="Bristoph Chocher", voice=("de", 34, 145),
+    dict(key="roesti", name="Rollbert Rösti", tts=("de_DE-thorsten_emotional-medium", "surprised", 0.95),
+         lines=["Gopferdammi!", "Huere Seich!", "Das isch jetzt nöd wahr!"],
+         say=["Gopferdammi!", "Huere Seich!", "Das isch jetzt nööd waar!"]),
+    dict(key="blocher", name="Bristoph Chocher", tts=("de_DE-thorsten_emotional-medium", "disgusted", 1.05),
          lines=["Gopfertami nomal!", "Huere Chaib!", "So en Seich!"]),
-    dict(key="maurer", name="Ulimuli", voice=("de", 40, 150),
-         lines=["Kä Luscht!", "Gopferdeckel!", "Huere Mischt!"]),
-    dict(key="greta", name="Töra Brummberg", voice=("en-us+f2", 66, 160),
-         lines=["How dare you, engine!", "You have stolen my horsepower!", "Blah, blah, blah!"]),
-    dict(key="federer", name="Fodger Rederer", voice=("de", 52, 160),
-         lines=["Come on!", "Oh nei, das isch jetzt blöd!", "Hopp Schwiiz!"]),
+    dict(key="maurer", name="Ulimuli", tts=("de_DE-thorsten_emotional-medium", "sleepy", 1.1),
+         lines=["Kä Luscht!", "Gopferdeckel!", "Huere Mischt!"],
+         say=["Kä Luscht!", "Gopferdeckel!", "Huere Mischt!"]),
+    dict(key="greta", name="Töra Brummberg", tts=("en_US-kristin-medium", None, 1.0),
+         lines=["How dare you, hill!", "You have stolen my wheels!", "Blah, blah, blah!"]),
+    dict(key="federer", name="Fodger Rederer", tts=("de_DE-thorsten_emotional-medium", "amused", 0.95),
+         lines=["Come on!", "Oh nei, das isch jetzt blöd!", "Hopp Schwiiz!"],
+         say=["Kamm onn!", "Oh nei, das isch jetzt blööd!", "Hopp Schwiiz!"]),
 ]
 DRIVER_BY_KEY = {d["key"]: d for d in DRIVERS}
 
