@@ -20,12 +20,12 @@ jobs:
           python-version: "3.14"
       - name: Build web version
         run: |
-          sudo apt-get install -y -qq ffmpeg > /dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
           python -m pip install pygbag==0.9.3
           mkdir web-src
           cp *.py web-src/
           cp -r assets web-src/
-          if ! python -m pygbag --build --title "Hill Rider" web-src > build.log 2>&1; then
+          if ! PYTHONUNBUFFERED=1 python -u -m pygbag --build --title "Hill Rider" web-src > build.log 2>&1; then
             echo "::error::$(grep -v ' : assets/' build.log | tail -25 | sed 's/%/%25/g' | tr '\n' '~' | sed 's/~/%0A/g')"
             exit 1
           fi
