@@ -9,7 +9,7 @@ import gfx
 import lang
 import lighting
 import sprites
-from config import DAY_LENGTH, STAGES, TITLE, VEHICLE_BY_KEY, WEB
+from config import DAY_LENGTH, STAGES, TITLE, VERSION, VEHICLE_BY_KEY, WEB
 from drivers import DRIVER_BY_KEY, face
 from game import Run
 from gfx import s, si
@@ -229,6 +229,8 @@ class HomeMenu:
             b.draw(surf, mouse, pressed and b.rect.collidepoint(mouse))
         for t in self.tiles:
             t.draw(surf, t.rect.collidepoint(mouse), self.items[self.focus] is t)
+        gfx.blit_text(surf, "heavy", 14, f"v{VERSION}", (200, 214, 240), (gfx.W - s(12), gfx.H - s(6)), "bottomright",
+                      outline=NAVY, width=1)
 
     def _daily_card(self, surf, mouse):
         app = self.app

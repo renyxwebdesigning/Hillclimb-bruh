@@ -22,17 +22,21 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
           python -m pip install pygbag==0.9.3
-          mkdir web-src
-          cp *.py web-src/
-          cp -r assets web-src/
-          if ! PYTHONUNBUFFERED=1 python -u -m pygbag --build --title "Hill Rider" --template web/loader.tmpl web-src > build.log 2>&1; then
+          # a new package name for every build, so no browser cache can ever hand out an old game
+          APP=hr-${GITHUB_SHA::8}
+          mkdir $APP
+          cp *.py $APP/
+          cp -r assets $APP/
+          if ! PYTHONUNBUFFERED=1 python -u -m pygbag --build --title "Hill Rider" --template web/loader.tmpl $APP > build.log 2>&1; then
             echo "::error::$(grep -v ' : assets/' build.log | tail -25 | sed 's/%/%25/g' | tr '\n' '~' | sed 's/~/%0A/g')"
             exit 1
           fi
           tail -5 build.log
-          cp web/manifest.webmanifest web/sw.js web/icon-*.png web/favicon.png web-src/build/web/
+          mkdir -p site
+          cp -r $APP/build/web/. site/
+          cp web/manifest.webmanifest web/sw.js web/icon-*.png web/favicon.png site/
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: web-src/build/web
+          publish_dir: site
           force_orphan: true

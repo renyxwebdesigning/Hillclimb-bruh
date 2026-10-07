@@ -2,7 +2,7 @@
 // Our own files: always ask the server first (bypassing the 10-minute browser cache, so updates show up
 // at once), the saved copy when offline.
 // The game engine from the pygbag server never changes for a given version: saved copy first.
-const CACHE = "hill-rider-v3";
+const CACHE = "hill-rider-v4";
 
 self.addEventListener("install", (e) => {
     e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "index.html", "manifest.webmanifest",

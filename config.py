@@ -3,6 +3,7 @@
 import sys
 
 TITLE = "Hill Rider"
+VERSION = "1.9.1"            # shown on the home screen, so players can see which version they have
 WEB = sys.platform == "emscripten"     # running in a web browser (pygbag)
 FPS = 60
 PHYS_DT = 1 / 500          # fixed physics step (s)
