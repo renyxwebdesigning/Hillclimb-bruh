@@ -35,6 +35,7 @@ PROFILES = {
     "excavator": dict(idle=11, top=46, tilt=1.4, sub=0.8, f1=(80, 50, 2.6), f2=(260, 140, 1.3), noise=0.5, gain=0.66),
     "lkw": dict(idle=10, top=52, tilt=1.35, sub=0.9, f1=(70, 45, 2.8), f2=(240, 120, 1.2), noise=0.42, gain=0.68),
     "horse": dict(hooves=True, gain=0.7),
+    "shark": dict(electric=True, gain=0.22),
     "tank": dict(idle=12, top=58, tilt=1.35, sub=0.7, f1=(90, 60, 2.6), f2=(300, 160, 1.2), noise=0.45, gain=0.66),
     "police": dict(idle=20, top=118, tilt=1.1, sub=0.75, f1=(150, 90, 2.2), f2=(450, 220, 1.0), noise=0.26, gain=0.58),
     "hover": dict(electric=True, gain=0.4),
@@ -268,7 +269,7 @@ class Voices:
         snd = self.sounds.get((key, i))
         if snd is None:
             from gfx import resource
-            path = Path(resource("assets", "voice", f"{key}_{i}.wav"))
+            path = Path(resource("assets", "voice", f"{key}_{i}.ogg"))
             if path.exists():
                 try:
                     snd = self.sounds[(key, i)] = pygame.mixer.Sound(str(path))

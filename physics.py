@@ -74,7 +74,9 @@ class Vehicle:
         return self.vx * math.cos(self.angle) + self.vy * math.sin(self.angle)
 
     # ------------------------------------------------------------------ step
-    def step(self, dt, gas, brake, boost, terrain, gravity, grip_scale):
+    def step(self, dt, gas, brake, boost, terrain, gravity, grip_scale, drag=0.0, water=0.0):
+        """drag: mud, deep snow or sand on the road here (slows rolling wheels and the vehicle).
+        water: extra resistance underwater (every move pushes through water, spinning slows down too)."""
         st = self.stats
         c, s = math.cos(self.angle), math.sin(self.angle)
         dnx, dny = s, -c          # chassis "down"
@@ -82,8 +84,9 @@ class Vehicle:
 
         fx, fy, tq = 0.0, -self.MASS * gravity, 0.0
         speed = math.hypot(self.vx, self.vy)
-        fx -= DRAG * self.vx * speed
-        fy -= DRAG * self.vy * speed
+        k = DRAG + water * 0.35
+        fx -= k * self.vx * speed + water * self.MASS * 0.06 * self.vx
+        fy -= k * self.vy * speed + water * self.MASS * 0.06 * self.vy
 
         for w in self.wheels:
             w.fx, w.fy, w.tq = 0.0, -w.m * gravity, 0.0
@@ -214,12 +217,15 @@ class Vehicle:
         self.vx += fx * self.inv_m * dt
         self.vy += fy * self.inv_m * dt
         self.omega += tq * self.inv_i * dt
-        self.omega *= 1.0 - 0.25 * dt
+        self.omega *= 1.0 - (0.25 + water * 0.12) * dt
         for w in self.wheels:
             w.vx += w.fx * w.inv_m * dt
             w.vy += w.fy * w.inv_m * dt
             w.omega += w.tq * w.inv_i * dt
             w.omega *= 1.0 - (0.15 if w.contact else 0.6) * dt
+            if drag and w.contact:
+                w.omega *= 1.0 - drag * 0.55 * dt
+                w.vx *= 1.0 - drag * 0.35 * dt
             if w.brake:
                 dw = 2600.0 * st.get("gravity_scale", 1.0) * (w.m / 28.0) * w.inv_i * dt
                 w.omega = 0.0 if abs(w.omega) <= dw else w.omega - math.copysign(dw, w.omega)

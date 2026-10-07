@@ -214,35 +214,22 @@ def coin(value, px_radius):
     return supersample(d, d, draw)
 
 
-def fuel_can(ppm):
-    w, h = 0.66 * ppm, 0.86 * ppm
+def nitro_can(ppm):
+    """Blue nitro bottle with a lightning bolt: refills half the boost tank."""
+    w, h = 0.62 * ppm, 0.95 * ppm
 
     def draw(surf, k):
         W, H = surf.get_size()
-        red, dark = (226, 38, 36), (130, 16, 18)
-        body = pygame.Rect(W * 0.04, H * 0.2, W * 0.92, H * 0.78)
-        pygame.draw.rect(surf, dark, body, border_radius=int(W * 0.12))
-        pygame.draw.rect(surf, red, body.inflate(-W * 0.08, -W * 0.08), border_radius=int(W * 0.1))
-        handle = pygame.Rect(W * 0.06, H * 0.02, W * 0.56, H * 0.24)
-        pygame.draw.rect(surf, dark, handle, border_radius=int(W * 0.08))
-        pygame.draw.rect(surf, red, handle.inflate(-W * 0.07, -W * 0.07), border_radius=int(W * 0.06))
-        for i in range(3):
-            hole = pygame.Rect(W * (0.13 + i * 0.15), H * 0.08, W * 0.11, H * 0.1)
-            pygame.draw.rect(surf, (0, 0, 0, 0), hole, border_radius=int(W * 0.04))
-        spout = pygame.Rect(W * 0.7, H * 0.04, W * 0.2, H * 0.2)
-        pygame.draw.rect(surf, (60, 60, 66), spout, border_radius=int(W * 0.05))
-        x0, y0, x1, y1 = W * 0.2, H * 0.32, W * 0.8, H * 0.74
-        hi = (248, 110, 100)
-        for a, b in (((x0, y0), (x1, y1)), ((x1, y0), (x0, y1))):
-            pygame.draw.line(surf, hi, a, b, max(1, int(W * 0.06)))
-        label = pygame.Rect(W * 0.12, H * 0.78, W * 0.76, H * 0.14)
-        pygame.draw.rect(surf, (250, 246, 236), label, border_radius=int(W * 0.04))
-        t = gfx.font_px("cond", label.h * 1.05).render("FUEL", True, dark)
-        if t.get_width() > label.w * 0.9:
-            t = pygame.transform.smoothscale_by(t, label.w * 0.9 / t.get_width())
-        surf.blit(t, t.get_rect(center=label.center))
-        pygame.draw.rect(surf, (255, 170, 160), pygame.Rect(W * 0.14, H * 0.26, W * 0.08, H * 0.42),
-                         border_radius=int(W * 0.04))
+        blue, dark, hi = (40, 130, 230), (14, 50, 120), (150, 210, 255)
+        body = pygame.Rect(W * 0.08, H * 0.2, W * 0.84, H * 0.78)
+        pygame.draw.rect(surf, dark, body, border_radius=int(W * 0.34))
+        pygame.draw.rect(surf, blue, body.inflate(-W * 0.1, -W * 0.1), border_radius=int(W * 0.3))
+        pygame.draw.rect(surf, (200, 204, 212), pygame.Rect(W * 0.34, H * 0.04, W * 0.32, H * 0.2),
+                         border_radius=int(W * 0.06))
+        pygame.draw.rect(surf, hi, pygame.Rect(W * 0.2, H * 0.3, W * 0.1, H * 0.5), border_radius=int(W * 0.05))
+        bolt = [(0.58, 0.3), (0.36, 0.6), (0.5, 0.6), (0.42, 0.88), (0.68, 0.52), (0.54, 0.52), (0.62, 0.3)]
+        pygame.draw.polygon(surf, (255, 230, 60), [(W * x, H * y) for x, y in bolt])
+        pygame.draw.polygon(surf, (120, 80, 0), [(W * x, H * y) for x, y in bolt], max(1, int(W * 0.03)))
     return supersample(w, h, draw)
 
 

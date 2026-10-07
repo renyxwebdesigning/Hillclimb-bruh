@@ -2,7 +2,7 @@
 import math
 import random
 
-from config import BOOST_RECHARGE, FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, season_at, vehicle_stats
+from config import FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, season_at, vehicle_stats
 from physics import Vehicle
 from render import Camera, Particles
 
@@ -53,6 +53,8 @@ class Run:
         self.outbox = []                # events for other online players
         self._acc = 0.0
         self._coin_lo = 0
+        for n in terrain.nitro:
+            n[2] = False
         self._air_t = 0.0
         self._air_rot = 0.0
         self._inverted_head = 9.0
@@ -78,10 +80,8 @@ class Run:
         car, st = self.car, self.stage
         g, b = gas and alive, brake and alive
         self.boosting = boost and alive and self.boost > 0
-        if self.boosting:
+        if self.boosting:                  # no refill over time: grab the blue nitro cans
             self.boost = max(0.0, self.boost - dt / self.stats["boost_seconds"])
-        else:
-            self.boost = min(1.0, self.boost + dt / BOOST_RECHARGE)
         self.audio.boost(self.boosting)
 
         grip = st["grip"]
@@ -94,10 +94,20 @@ class Run:
                     self.hud.notice(name + "!", {"WINTER": (170, 220, 255), "SPRING": (255, 160, 200),
                                                  "SUMMER": (255, 220, 60), "FALL": (240, 140, 40)}[name])
                 self._season = season[0]
+        drag = 0.0
+        zone = self.terrain.zone_at(car.x)
+        if zone:
+            mul, drag = self.terrain.ZONES[zone]
+            grip *= mul
+            if zone != getattr(self, "_zone", None) and self.state == "drive":
+                self.hud.notice({"mud": "MUD!", "ice": "ICE!", "snow": "DEEP SNOW!", "sand": "SAND!",
+                                 "oil": "OIL!", "seaweed": "SEAWEED!"}[zone], (230, 230, 240))
+        self._zone = zone
         self._acc += dt
         steps = 0
         while self._acc >= PHYS_DT and steps < 50:
-            car.step(PHYS_DT, g, b, self.boosting, self.terrain, st["gravity"] * GRAVITY_SCALE, grip)
+            car.step(PHYS_DT, g, b, self.boosting, self.terrain, st["gravity"] * GRAVITY_SCALE, grip, drag,
+                     st.get("water_drag", 0.0))
             self._acc -= PHYS_DT
             steps += 1
             if not car.grounded:
@@ -259,6 +269,17 @@ class Run:
         hx, hy = car.to_world(*car.HEAD)
         probes = [(car.x, car.y + 0.2, 1.25), (hx, hy, 0.5)] + [(w.x, w.y, 0.62) for w in car.wheels]
         self._trophies(probes)
+        for n in self.terrain.nitro:
+            if n[2] or abs(n[0] - car.x) > 4:
+                continue
+            if any((n[0] - px) ** 2 + (n[1] - py) ** 2 < (pr + 0.5) ** 2 for px, py, pr in probes):
+                n[2] = True
+                self.boost = min(1.0, self.boost + 0.5)
+                self.audio.play("fuel")
+                self.hud.notice("NITRO!", (90, 200, 255))
+                for _ in range(14):
+                    self.particles.add("spark", n[0], n[1], random.uniform(-3, 3), random.uniform(-1, 4), 0.5, 0.08,
+                                       (120, 220, 255), grav=3, back=False)
         coins = self.terrain.coins
         while self._coin_lo < len(coins) and coins[self._coin_lo][0] < car.x - 4:
             self._coin_lo += 1
@@ -350,7 +371,10 @@ class Run:
 
     def _effects(self, dt, gas):
         car, st = self.car, self.stage
-        colors = (st["ground"], st["top"], st["pebble"], st["top_lo"])
+        colors = {"mud": ((78, 52, 30), (98, 66, 38), (60, 40, 24)), "snow": ((250, 252, 255), (226, 236, 248)),
+                  "sand": ((226, 196, 130), (204, 170, 104)), "ice": ((210, 236, 255), (250, 252, 255)),
+                  "oil": ((30, 30, 34), (60, 60, 70))}.get(getattr(self, "_zone", None),
+                                                           (st["ground"], st["top"], st["pebble"], st["top_lo"]))
         for w in car.wheels:
             if w.contact and abs(w.slip) > 1.6 and random.random() < min(1.0, abs(w.slip) * 0.12):
                 tx, ty = w.ny, -w.nx

@@ -1,6 +1,6 @@
 """Record the drivers' swear lines with Piper (natural neural text-to-speech) into assets/voice.
 
-Needs the Piper binary and the voice models named in drivers.DRIVERS:
+Needs ffmpeg, the Piper binary and the voice models named in drivers.DRIVERS:
     https://github.com/rhasspy/piper/releases  (piper_linux_x86_64.tar.gz)
     https://huggingface.co/rhasspy/piper-voices  (<model>.onnx + <model>.onnx.json)
 
@@ -53,11 +53,16 @@ def main(piper, models):
                 rate = w.getframerate()
                 data = np.frombuffer(w.readframes(w.getnframes()), np.int16)
             os.remove(raw)
-            with wave.open(os.path.join(OUT, f"{d['key']}_{i}.wav"), "wb") as w:
+            clean = os.path.join(OUT, f"{d['key']}_{i}.clean.wav")
+            with wave.open(clean, "wb") as w:
                 w.setnchannels(1)
                 w.setsampwidth(2)
                 w.setframerate(rate)
                 w.writeframes(polish(data, rate).tobytes())
+            # small OGG files keep the download compact
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", clean, "-c:a", "libvorbis", "-q:a", "3",
+                            os.path.join(OUT, f"{d['key']}_{i}.ogg")], check=True)
+            os.remove(clean)
             print(d["key"], i, text)
 
 

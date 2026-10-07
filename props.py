@@ -31,10 +31,13 @@ SIZES = {
     "windmill": (4.4, 9.5), "barn": (6.4, 5.4), "pyramid": (11.0, 7.2), "pumpjack": (5.6, 4.2), "igloo": (3.6, 2.2),
     "lander": (3.8, 3.8), "billboard": (6.6, 5.4), "hut": (3.8, 3.2), "temple": (8.0, 6.4), "dome": (6.6, 4.4),
     "launchpad": (3.6, 8.6),
+    # underwater
+    "coral": (1.8, 1.7), "seaweed": (1.2, 3.2), "anemone": (1.2, 0.9), "shell": (0.7, 0.45), "starfish": (0.8, 0.3),
+    "treasure": (1.3, 1.0), "shipwreck": (9.0, 6.0),
 }
 # landmarks with moving parts (render.WorldRenderer animates them) or lights
 LANDMARKS = {"windmill", "barn", "pyramid", "pumpjack", "igloo", "lander", "billboard", "hut", "temple", "dome",
-             "launchpad"}
+             "launchpad", "shipwreck"}
 LIGHTS = {"lamp": (0.42, 3.15), "billboard": (0.0, 5.0), "trafficlight": (0.0, 2.9)}  # glow at night: (x, y) of the light
 
 
@@ -503,6 +506,63 @@ def make(kind, ppm, variant=0):
             poly((220, 40, 40), [(-0.4, 6.2), (0.6, 6.2), (0.1, 8.0)])
             poly((220, 40, 40), [(-0.8, 0.5), (-0.4, 0.5), (-0.4, 1.8)])
             poly((220, 40, 40), [(1.0, 0.5), (0.6, 0.5), (0.6, 1.8)])
+        # ---------------------------------------------------------- underwater
+        elif kind == "coral":
+            col = rnd.choice(((250, 110, 120), (255, 150, 70), (230, 90, 170)))
+
+            def branch(x, y, ang, L, wd, depth):
+                x2, y2 = x + math.cos(ang) * L, y + math.sin(ang) * L
+                line(col, (x, y), (x2, y2), wd)
+                circ(gfx.mix(col, (255, 255, 255), 0.3), x2, y2, wd * 0.6)
+                if depth:
+                    branch(x2, y2, ang + 0.5, L * 0.7, wd * 0.75, depth - 1)
+                    branch(x2, y2, ang - 0.45, L * 0.7, wd * 0.75, depth - 1)
+            branch(0.0, 0.0, math.pi / 2, 0.6, 0.18, 3)
+        elif kind == "seaweed":
+            for x0, top, ph in ((-0.3, 2.8, 0.0), (0.05, 3.1, 1.3), (0.35, 2.4, 2.4)):
+                pts = [(x0 + 0.18 * math.sin(y * 2.2 + ph), y) for y in [i * 0.2 for i in range(int(top / 0.2) + 1)]]
+                for a, b in zip(pts, pts[1:]):
+                    line((50, 140, 70), a, b, 0.14)
+                for a in pts[2::3]:
+                    poly((80, 176, 90), [a, (a[0] + 0.3, a[1] + 0.12), (a[0] + 0.04, a[1] + 0.2)])
+        elif kind == "anemone":
+            for i in range(9):
+                ang = math.pi * (0.15 + 0.7 * i / 8)
+                tip = (math.cos(ang) * 0.55, 0.25 + math.sin(ang) * 0.6)
+                line((200, 90, 200), (0, 0.25), tip, 0.08)
+                circ((250, 160, 250), *tip, 0.06)
+            pygame.draw.ellipse(surf, (150, 60, 160), pygame.Rect(P(-0.4, 0.35), (0.8 * sc, 0.35 * sc)))
+        elif kind == "shell":
+            for i in range(7):
+                ang = math.pi * (i / 6)
+                line((250, 220, 210), (0, 0.02), (math.cos(ang) * 0.3, 0.02 + math.sin(ang) * 0.36), 0.06)
+            pygame.draw.ellipse(surf, (240, 200, 190), pygame.Rect(P(-0.3, 0.38), (0.6 * sc, 0.36 * sc)), max(1, int(0.03 * sc)))
+        elif kind == "starfish":
+            pts = []
+            for i in range(10):
+                r = 0.38 if i % 2 == 0 else 0.15
+                ang = math.pi / 2 + i * math.pi / 5
+                pts.append((math.cos(ang) * r, 0.15 + math.sin(ang) * r * 0.4))
+            poly((250, 130, 60), pts)
+        elif kind == "treasure":
+            poly((110, 70, 36), [(-0.6, 0), (0.6, 0), (0.6, 0.55), (-0.6, 0.55)])
+            pygame.draw.ellipse(surf, (130, 84, 44), pygame.Rect(P(-0.6, 0.85), (1.2 * sc, 0.6 * sc)))
+            for x in (-0.45, 0.45):
+                line((220, 180, 60), (x, 0), (x, 0.8), 0.07)
+            circ((255, 220, 70), 0.0, 0.5, 0.08)
+            for x in (-0.25, 0.0, 0.2):
+                circ((255, 210, 50), x, 0.62, 0.09)
+        elif kind == "shipwreck":
+            hull = [(-4.2, 0.0), (3.8, 0.0), (4.4, 2.2), (2.0, 1.6), (0.6, 2.1), (-1.0, 1.4), (-2.6, 2.0), (-4.0, 1.5)]
+            poly((90, 66, 46), hull)
+            for i in range(1, 6):
+                line((70, 50, 34), (-4.1, i * 0.32), (4.0, i * 0.36), 0.05)
+            for x, y in ((-1.8, 0.8), (0.4, 0.9), (2.4, 1.0)):
+                circ((30, 40, 50), x, y, 0.22)
+            line((80, 60, 42), (-0.4, 1.8), (-1.2, 5.8), 0.2)
+            poly((200, 196, 170), [(-1.1, 5.4), (-0.6, 3.4), (0.6, 3.8)])
+            line((40, 120, 70), (2.8, 0.2), (3.2, 2.6), 0.1)
+            line((40, 120, 70), (-3.6, 0.2), (-3.2, 2.0), 0.1)
     return gfx.supersample(w * ppm, h * ppm, draw)
 
 

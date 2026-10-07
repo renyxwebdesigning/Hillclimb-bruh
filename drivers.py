@@ -45,18 +45,26 @@ OUT = (44, 28, 24)
 SIZE = 1.95          # sprite half-size in head radii (hair and collar stick out)
 
 
+_faces = {}
+
+
 def face(key, radius_px):
-    """A head sprite for the driver; the head centre is the sprite centre."""
+    """A head sprite for the driver; the head centre is the sprite centre. Painted once per size, then reused."""
+    cache_key = (key, int(radius_px))
+    if cache_key in _faces:
+        return _faces[cache_key]
     size = radius_px * 2 * SIZE
 
     import portraits
+    from config import WEB
 
     def draw(surf, k):
         if key in portraits.PORTRAITS:
             portraits.PORTRAITS[key](portraits.Art(surf, radius_px * k))
         else:
             DRAW.get(key, _default)(Painter(surf, radius_px * k))
-    return gfx.supersample(size, size, draw)
+    img = _faces[cache_key] = gfx.supersample(size, size, draw, ss=2 if WEB else 3)   # phones: faster to paint
+    return img
 
 
 def spline(pts, closed=True, steps=8):

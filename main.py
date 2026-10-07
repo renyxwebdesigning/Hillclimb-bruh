@@ -259,6 +259,8 @@ class App:
         self.audio.play("click")
         spec = self.vehicle
         terrain, self.world = self.world_for(stage)
+        self.world.warm_up()                    # draw this map's scenery now, not in the middle of the run
+        self.art.vehicle(spec, self.data["driver"])            # ...and the vehicle with the driver's face
         self.hud.clear()
         self.remote_bubbles.clear()
         self.run = Run(stage, terrain, spec, self.data["levels"][spec["key"]], self.data["coins"],

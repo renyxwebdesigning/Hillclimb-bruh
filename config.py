@@ -3,7 +3,7 @@
 import sys
 
 TITLE = "Hill Rider"
-VERSION = "1.9.1"            # shown on the home screen, so players can see which version they have
+VERSION = "2.0"            # shown on the home screen, so players can see which version they have
 WEB = sys.platform == "emscripten"     # running in a web browser (pygbag)
 FPS = 60
 PHYS_DT = 1 / 500          # fixed physics step (s)
@@ -15,7 +15,6 @@ BASE_PPM = 56              # pixels per metre at 720p, before speed zoom-out
 SEASON_LENGTH = 450.0      # metres per season on the Four Seasons stage
 SEASON_BLEND = 70.0        # metres over which one season fades into the next
 FUEL_SECONDS = 30          # a full tank lasts this long (fuel_rate 1.0)
-BOOST_RECHARGE = 9.0       # seconds to refill an empty boost tank
 
 # ---------------------------------------------------------------- stages
 # Colours are (r, g, b). "octaves" are (wavelength m, amplitude m) pairs for
@@ -32,6 +31,7 @@ STAGES = [
         octaves=[(72, 11.0), (29, 6.5), (11, 1.8), (4.5, 0.25)],
         decor="clouds", props=("tree", "tree", "bush", "flowers", "fence", "rock", "haybale", "sunflower", "mailbox"),
         landmarks=("windmill", "barn"), cycle=True,
+        obstacles=("mud", "mud", "rocks", "log"),
     ),
     dict(
         key="desert", name="Desert", seed=23,
@@ -44,6 +44,7 @@ STAGES = [
         octaves=[(95, 15.0), (36, 6.5), (13, 1.2), (5, 0.15)],
         decor="sun", props=("cactus", "cactus", "cactus2", "rock", "skull", "deadbush", "tumbleweed", "barrel", "bones"),
         landmarks=("pyramid", "pumpjack"), cycle=True,
+        obstacles=("sand", "sand", "rocks"),
     ),
     dict(
         key="arctic", name="Arctic", seed=37,
@@ -56,6 +57,7 @@ STAGES = [
         octaves=[(64, 11.0), (24, 5.5), (9, 1.6), (4, 0.2)],
         decor="snow", props=("snowpine", "pine", "snowpine", "snowman", "rock", "crystal", "penguin", "icerock", "penguin"),
         landmarks=("igloo",), cycle=True,
+        obstacles=("ice", "snow", "snow", "rocks"),
     ),
     dict(
         key="moon", name="Moon", seed=53,
@@ -68,6 +70,7 @@ STAGES = [
         octaves=[(84, 8.0), (31, 3.8), (10, 1.2), (4, 0.2)],
         decor="space", props=("moonrock", "moonrock", "dish", "flag", "moonrock", "satellite", "solarpanel"),
         landmarks=("lander",), cycle=False, base_dark=0.35,
+        obstacles=("rocks",),
     ),
 ]
 STAGES += [
@@ -82,6 +85,7 @@ STAGES += [
         octaves=[(80, 7.0), (32, 3.6), (12, 0.6), (5, 0.08)],
         decor="city", props=("lamp", "lamp", "car", "hydrant", "cone", "bin", "sign", "bench", "trafficlight", "car"),
         landmarks=("billboard",), cycle=True,
+        obstacles=("oil", "speedbump", "speedbump"),
     ),
     dict(
         key="volcano", name="Volcano", seed=71,
@@ -94,6 +98,7 @@ STAGES += [
         octaves=[(70, 10.0), (26, 5.5), (10, 1.6), (4, 0.25)],
         decor="volcano", props=("deadtree", "lavarock", "vent", "lavarock", "skull", "bones", "warnsign"),
         landmarks=("hut",), cycle=False, base_dark=0.12,
+        obstacles=("rocks", "rocks", "sand"),
     ),
     dict(
         key="jungle", name="Jungle", seed=81,
@@ -106,6 +111,7 @@ STAGES += [
         octaves=[(66, 10.0), (25, 5.5), (10, 1.8), (4, 0.3)],
         decor="jungle", props=("palm", "palm", "fern", "bigflower", "mushroom", "fern", "rock", "bamboo", "totem", "bamboo"),
         landmarks=("temple",), cycle=True,
+        obstacles=("mud", "mud", "log", "rocks"),
     ),
     dict(
         key="mars", name="Mars", seed=91,
@@ -118,6 +124,19 @@ STAGES += [
         octaves=[(88, 9.0), (32, 4.2), (11, 1.3), (4, 0.2)],
         decor="mars", props=("marsrock", "marsrock", "rover", "dish", "marsrock", "solarpanel", "antenna"),
         landmarks=("dome", "launchpad"), cycle=False, base_dark=0.0,
+        obstacles=("sand", "rocks", "rocks"),
+    ),
+    dict(
+        key="ocean", name="Underwater", seed=111,
+        gravity=4.6, grip=0.85, water_drag=7.0,       # light (buoyancy) but every move pushes through water
+        sky=((12, 70, 140), (36, 150, 196)),
+        far=((24, 96, 140), (20, 80, 120)),
+        ground=(196, 168, 112), pebble=(170, 144, 96), pebble_hi=(222, 196, 140),
+        top=(232, 210, 150), top_hi=(250, 236, 190), top_lo=(196, 170, 112),
+        top_depth=0.32, water=None, cave=(30, 60, 80),
+        octaves=[(76, 10.0), (28, 5.0), (10, 1.4), (4.5, 0.2)],
+        decor="ocean", props=("coral", "seaweed", "seaweed", "anemone", "shell", "starfish", "coral", "treasure"),
+        obstacles=("seaweed", "rocks", "seaweed"), landmarks=("shipwreck",), cycle=False, base_dark=0.15,
     ),
     dict(
         key="seasons", name="Four Seasons", seed=101,
@@ -135,23 +154,23 @@ STAGES += [
                  sky=((120, 160, 215), (225, 238, 250)), far=((210, 226, 242), (176, 200, 228)),
                  ground=(126, 100, 84), pebble=(110, 90, 76), pebble_hi=(150, 130, 110),
                  top=(244, 249, 255), top_hi=(255, 255, 255), top_lo=(196, 214, 236),
-                 props=("snowpine", "snowpine", "snowman", "rock", "penguin", "icerock"), landmarks=("igloo",)),
+                 props=("snowpine", "snowpine", "snowman", "rock", "penguin", "icerock"), landmarks=("igloo",), obstacles=("ice", "snow", "snow"),),
             dict(name="SPRING", grip=1.0, weather="petals", decor="clouds",
                  sky=((96, 176, 236), (214, 240, 252)), far=((176, 222, 190), (130, 196, 150)),
                  ground=(150, 98, 54), pebble=(126, 80, 42), pebble_hi=(166, 116, 66),
                  top=(140, 210, 70), top_hi=(190, 240, 110), top_lo=(98, 166, 46),
-                 props=("blossom", "blossom", "tulips", "bigflower", "bush", "flowers"), landmarks=("windmill",)),
+                 props=("blossom", "blossom", "tulips", "bigflower", "bush", "flowers"), landmarks=("windmill",), obstacles=("mud", "mud", "log"),),
             dict(name="SUMMER", grip=1.05, weather=None, decor="sun",
                  sky=((60, 150, 232), (190, 230, 252)), far=((160, 206, 160), (110, 176, 120)),
                  ground=(160, 104, 52), pebble=(136, 86, 42), pebble_hi=(176, 120, 66),
                  top=(120, 190, 40), top_hi=(170, 226, 80), top_lo=(84, 146, 30),
-                 props=("tree", "tree", "sunflower", "haybale", "bush", "fence"), landmarks=("barn",)),
+                 props=("tree", "tree", "sunflower", "haybale", "bush", "fence"), landmarks=("barn",), obstacles=("rocks", "log"),),
             dict(name="FALL", grip=0.95, weather="leaves", decor="clouds",
                  sky=((230, 170, 110), (250, 222, 180)), far=((206, 160, 110), (176, 120, 80)),
                  ground=(128, 82, 46), pebble=(110, 70, 40), pebble_hi=(150, 100, 60),
                  top=(196, 136, 52), top_hi=(232, 176, 80), top_lo=(150, 96, 36),
                  props=("autumntree", "autumntree", "pumpkin", "scarecrow", "leafpile", "deadbush"),
-                 landmarks=("barn", "windmill")),
+                 landmarks=("barn", "windmill"), obstacles=("mud", "log", "rocks"),),
         ],
     ),
 ]
@@ -318,6 +337,18 @@ VEHICLES += [
         head=(1.65, 1.08), head_r=0.27, exhaust=(0.95, 2.15), nozzle=(-2.6, 0.4),
         engine=(1.8, 0.5), lights=[(2.6, 0.35)], tail=[(-2.58, 0.25)],
         rig="strut", sound="lkw", head_art="helmet", wheel_art=("truck", "truck"), head_behind=True,
+    ),
+    dict(
+        key="shark", name="Shark", tagline="Swims, bites, flies",
+        mass=220, inertia=230, rest=0.42, ext=(0.2, 0.58),
+        wheels=[(-0.72, -0.22, 0.26, 18, 0.5), (0.82, -0.22, 0.26, 18, 0.5)],
+        torque=(700, 80), spin=(40, 3.6), spring=(16000, 1200), damping=(1500, 120),
+        grip=0.9, air_torque=1650, thrust=(380, 45), boost=(2600, 200), fuel_rate=1.0,
+        hull=[(-1.9, 0.1), (-1.2, -0.25), (0.6, -0.3), (1.95, 0.0), (1.4, 0.45), (0.2, 0.6), (-1.2, 0.4),
+              (0.1, 1.05)],
+        head=(-0.25, 1.22), head_r=0.24, exhaust=(-1.9, 0.1), nozzle=(-2.0, 0.1),
+        engine=(0.0, 0.2), lights=[(1.85, 0.12)], tail=[],
+        rig="shark", sound="shark", head_art="helmet", wheel_art=("none", "none"),
     ),
     dict(
         key="horse", name="Horse", tagline="Gallops over every hill",

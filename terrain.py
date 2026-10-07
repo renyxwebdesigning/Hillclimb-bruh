@@ -67,11 +67,13 @@ class Terrain:
         self.n = n
         self.stage = stage
         v, ceil = self._build_features(xs, h, np.random.default_rng(stage["seed"] + 7))
+        self.zones, self.bumps = self._place_obstacles(xs, h, v, np.random.default_rng(stage["seed"] + 9))
+        self._zone_a = [z[0] for z in self.zones]
         self.h = h.tolist()
         self.v = v.tolist()
         self.c = ceil.tolist()
         self._tunnel_a = [a for a, _ in self.tunnels]
-        self.fuel, self.coins = self._place_pickups(np.random.default_rng(stage["seed"] + 1))
+        self.nitro, self.coins = self._place_pickups(np.random.default_rng(stage["seed"] + 1))
         self.props = self._place_props(np.random.default_rng(stage["seed"] + 3))
         self.landmarks = self._place_landmarks(np.random.default_rng(stage["seed"] + 5))
         self.trophies = place_trophies(self, __import__("random").Random(stage["seed"] * 31))
@@ -153,6 +155,55 @@ class Terrain:
         for a, b, _ in self.pits:
             if a - pad - 10 <= x <= b + pad:
                 return "pit"
+        return None
+
+    # ---------------------------------------------------------- obstacles
+    # patches that change how the road drives: (grip multiplier, drag that slows the wheels and the body)
+    ZONES = {"mud": (0.55, 2.6), "ice": (0.22, 0.0), "snow": (0.7, 1.7), "sand": (0.7, 1.3), "oil": (0.25, 0.0),
+             "seaweed": (0.8, 2.2)}
+    BUMPS = {"rocks": (0.75, 3.2), "log": (0.55, 1.6), "speedbump": (0.32, 2.4)}     # height, length (m)
+
+    def _place_obstacles(self, xs, h, v, rng):
+        """Mud, ice, snow drifts, sand, oil, rocks, logs and speed bumps, every 60-130 m after the start."""
+        zones, bumps = [], []
+        x = 75.0
+        while x < LENGTH - 60:
+            x += float(rng.uniform(60, 130))
+            kinds = self._kinds(x, "obstacles")
+            if not kinds:
+                continue
+            kind = kinds[int(rng.integers(len(kinds)))]
+            if kind in self.BUMPS:
+                height, length = self.BUMPS[kind]
+                if self.feature_at(x, 10.0):
+                    continue
+                lo, hi = int((x - length / 2 - START) / RES), int((x + length / 2 - START) / RES)
+                if hi + 1 >= len(h):
+                    break
+                u = np.linspace(0, 1, hi - lo + 1)
+                shape = np.sin(np.pi * u) ** (0.6 if kind == "rocks" else 1.4) * height * rng.uniform(0.8, 1.15)
+                h[lo:hi + 1] += shape
+                v[lo:hi + 1] += shape
+                bumps.append((x, kind, length))
+            else:
+                length = float(rng.uniform(9, 18))
+                if self.feature_at(x, 8.0) or self.feature_at(x + length, 8.0):
+                    continue
+                if kind == "snow":                       # a drift: a soft hump of deep snow
+                    lo, hi = int((x - START) / RES), int((x + length - START) / RES)
+                    if hi + 1 >= len(h):
+                        break
+                    u = np.linspace(0, 1, hi - lo + 1)
+                    shape = np.sin(np.pi * u) ** 1.5 * rng.uniform(0.9, 1.5)
+                    h[lo:hi + 1] += shape
+                    v[lo:hi + 1] += shape
+                zones.append((x, x + length, kind))
+        return zones, bumps
+
+    def zone_at(self, x):
+        i = bisect.bisect_right(self._zone_a, x) - 1
+        if i >= 0 and self.zones[i][0] <= x <= self.zones[i][1]:
+            return self.zones[i][2]
         return None
 
     def pit_at(self, x):
@@ -247,10 +298,16 @@ class Terrain:
 
     # ------------------------------------------------------------ pickups
     def _place_pickups(self, rng):
-        fuel = []           # fuel never runs out any more, so no cans
-
+        # nitro cans: the only way to refill the boost, so it doesn't last forever
+        nitro = []
+        x = 120.0
+        while x < LENGTH - 50:
+            x += float(rng.uniform(140, 230))
+            if self.feature_at(x, 6.0) == "tunnel" or self.pit_at(x) or self.pit_at(x + 3):
+                x += 12.0
+            nitro.append([x, self.height(x) + 1.05, False])
         coins = []
-        fuel_x = [f[0] for f in fuel]
+        fuel_x = [n[0] for n in nitro]
         x = 28.0
         while x < LENGTH - 50:
             cols = int(rng.integers(3, 8))
@@ -268,7 +325,7 @@ class Terrain:
                 for r in range(rows):
                     coins.append([cx, ground + 0.95 + r * 0.78, value, False])
             x += span + float(rng.uniform(45, 95))
-        return fuel, coins
+        return nitro, coins
 
     def _kinds(self, x, what):
         """Prop or landmark kinds at x (the Four Seasons stage changes them with the season)."""

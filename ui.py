@@ -398,7 +398,7 @@ class Setup:
     STAGE_INFO = {"countryside": "Rolling hills · day & night", "desert": "Huge dunes · day & night",
                   "arctic": "Slippery ice · day & night", "moon": "Low gravity", "city": "Skyscrapers · night lights",
                   "volcano": "Jump the lava pits!", "jungle": "Rain, rivers & palms", "mars": "Red dust · very low gravity",
-                  "seasons": "Winter, spring, summer & fall"}
+                  "seasons": "Winter, spring, summer & fall", "ocean": "Coral, seaweed & shipwrecks"}
 
     def __init__(self, app):
         self.app = app

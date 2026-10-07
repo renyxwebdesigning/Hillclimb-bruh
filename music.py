@@ -336,7 +336,7 @@ TRACKS = {"menu": ("Menu", menu_track), "drive": ("Country", drive_track), "rock
           "chiptune": ("8-Bit", chiptune_track), "techno": ("Techno", techno_track), "lofi": ("Lo-Fi", lofi_track)}
 DRIVE_TRACKS = ["drive", "rock", "chiptune", "techno", "lofi"]
 STAGE_MUSIC = {"countryside": "drive", "desert": "rock", "arctic": "lofi", "moon": "chiptune", "city": "techno",
-               "volcano": "rock", "jungle": "lofi", "mars": "chiptune"}
+               "volcano": "rock", "jungle": "lofi", "mars": "chiptune", "ocean": "lofi", "seasons": "drive"}
 
 
 def load(name):

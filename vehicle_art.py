@@ -13,7 +13,7 @@ from sprites import OUTLINE, STEEL, STEEL_HI, TYRE, _mapper, _poly, _tube, car_b
 
 EXTENT = {"jeep": 2.3, "dirtbike": 1.8, "chopper": 2.0, "monster": 2.7, "supercar": 2.35,
           "tank": 3.15, "police": 2.4, "hoverboard": 2.0, "tesla": 2.35, "mini": 1.8, "b2": 2.5,
-          "excavator": 3.1, "lkw": 2.95, "horse": 2.3}
+          "excavator": 3.1, "lkw": 2.95, "horse": 2.3, "shark": 2.3}
 
 CHROME, CHROME_DK = (214, 220, 228), (118, 124, 134)
 BLACK = (34, 34, 38)
@@ -451,9 +451,42 @@ def _hoverboard(surf, k, ppm):
         pygame.draw.circle(surf, (236, 190, 150), P(hx, hy), 0.055 * sc)
 
 
+def _shark(surf, k, ppm):
+    """The shark (without its tail fin, which beats in render) and its rider (without the head)."""
+    P, sc = _mapper(surf, ppm, k)
+    top, belly, dark = (96, 118, 140), (236, 240, 244), (60, 76, 94)
+    _poly(surf, P, sc, [(-0.2, 0.45), (0.25, 1.15), (0.6, 0.45)], dark, (30, 40, 52), 0.02)          # dorsal fin
+    body = [(-1.75, 0.08), (-1.2, 0.38), (-0.2, 0.55), (0.9, 0.48), (1.6, 0.28), (2.0, 0.02), (1.7, -0.18),
+            (0.8, -0.32), (-0.4, -0.3), (-1.4, -0.12)]
+    from drivers import spline
+    body = spline(body, steps=6)
+    _poly(surf, P, sc, body, top, (30, 40, 52), 0.022)
+    under = [(-1.6, 0.0), (-0.4, -0.08), (0.8, -0.08), (1.75, 0.0), (1.7, -0.18), (0.8, -0.32), (-0.4, -0.3),
+             (-1.4, -0.12)]
+    pygame.draw.polygon(surf, belly, [P(*p) for p in spline(under, steps=6)])
+    _poly(surf, P, sc, [(0.4, -0.15), (0.0, -0.62), (0.75, -0.2)], dark, (30, 40, 52), 0.02)          # pectoral fin
+    for x in (1.0, 1.1, 1.2):                                                                    # gills
+        pygame.draw.line(surf, dark, P(x, 0.25), P(x - 0.06, -0.02), max(1, int(0.03 * sc)))
+    pygame.draw.circle(surf, (20, 20, 24), P(1.5, 0.16), 0.06 * sc)
+    pygame.draw.circle(surf, (255, 255, 255), P(1.52, 0.18), 0.02 * sc)
+    mouth = [(1.35, -0.06), (1.65, -0.1), (1.92, -0.02)]
+    pygame.draw.lines(surf, (30, 30, 36), False, [P(*p) for p in mouth], max(1, int(0.03 * sc)))
+    for i in range(5):
+        x = 1.4 + i * 0.1
+        pygame.draw.polygon(surf, (255, 255, 255), [P(x, -0.07), P(x + 0.05, -0.07), P(x + 0.025, -0.15)])
+    # rider astride, holding the dorsal fin
+    pants, jacket, boot = (40, 50, 70), (230, 110, 40), (30, 22, 18)
+    _limb(surf, P, sc, (-0.35, 0.72), (-0.1, 0.42), 0.15, pants)
+    _limb(surf, P, sc, (-0.1, 0.42), (-0.25, 0.12), 0.12, boot)
+    _limb(surf, P, sc, (-0.35, 0.72), (-0.28, 1.0), 0.3, jacket)
+    _limb(surf, P, sc, (-0.2, 0.95), (0.15, 0.85), 0.1, jacket)
+    _limb(surf, P, sc, (0.15, 0.85), (0.3, 0.95), 0.09, jacket)
+    pygame.draw.circle(surf, (236, 190, 150), P(0.32, 0.96), 0.05 * sc)
+
+
 BODIES = {"dirtbike": _dirtbike, "chopper": _chopper, "monster": _monster, "supercar": _supercar,
           "tank": _tank, "police": _police, "hoverboard": _hoverboard, "tesla": _tesla, "mini": _mini, "b2": _b2,
-          "excavator": _excavator, "lkw": _lkw, "horse": _horse}
+          "excavator": _excavator, "lkw": _lkw, "horse": _horse, "shark": _shark}
 
 
 def body(key, ppm):

@@ -57,10 +57,12 @@ The square button at the top right switches to fullscreen (not available on iPho
 
 ## Features
 
-- 9 maps: Countryside, Desert, Arctic, Moon, City, Volcano (jump the lava pits!), Jungle, Mars and Four Seasons (winter, spring, summer and fall change as you drive; winter is slippery). Every map has its own landmarks (windmills, a pyramid, an oil pump, an igloo, a Moon lander, a jungle temple, a Mars base...), birds and weather. Most have a day/night cycle with headlights and street lamps.
-- 14 vehicles: Jeep, Dirt Bike, Chopper, Monster Truck, Supercar, Tank, Police Car (siren!), Hoverboard, Tesla, Mini One, B2 Bomber (it flies), Excavator, LKW and a galloping Horse, each with its own upgrades (engine, suspension, tires, boost).
+- 10 maps: Countryside, Desert, Arctic, Moon, City, Volcano (jump the lava pits!), Jungle, Mars, Underwater (coral, fish, shipwrecks; everything floats and pushes through water) and Four Seasons (winter, spring, summer and fall change as you drive; winter is slippery). Every map has its own landmarks (windmills, a pyramid, an oil pump, an igloo, a Moon lander, a jungle temple, a Mars base...), birds and weather. Most have a day/night cycle with headlights and street lamps.
+- 15 vehicles: Jeep, Dirt Bike, Chopper, Monster Truck, Supercar, Tank, Police Car (siren!), Hoverboard, Tesla, Mini One, B2 Bomber (it flies), Excavator, LKW, a galloping Horse and a Shark, each with its own upgrades (engine, suspension, tires, boost).
 - 11 drivers to choose from; they swear in their own voice when they crash (natural voices recorded with [Piper](https://github.com/rhasspy/piper), see `tools/make_voices.py`).
-- Bridges, tunnels, coins, air-time and flip bonuses, 45 secret trophies and 15 achievements (Trophy Room).
+- Obstacles: mud, ice, deep snow drifts, sand, oil, seaweed, boulders, logs and speed bumps.
+- Boost is limited: refill it with the blue nitro cans along the track.
+- Bridges, tunnels, coins, air-time and flip bonuses, 50 secret trophies and 15 achievements (Trophy Room).
 - Daily challenge, ghost of your best run, world leaderboard, online races and 4-race tournaments.
 - 5 music tracks to choose from, volume settings, graphics quality, English or German (Settings → Language).
 
