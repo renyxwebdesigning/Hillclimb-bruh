@@ -1,0 +1,36 @@
+name: Browser version
+
+# Builds the browser version with pygbag and publishes it on GitHub Pages
+# (branch gh-pages) every time main changes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Build web version
+        run: |
+          python -m pip install pygbag==0.9.3
+          mkdir web-src
+          cp *.py web-src/
+          cp -r assets web-src/
+          if ! python -m pygbag --build --title "Hill Rider" web-src > build.log 2>&1; then
+            tail -30 build.log | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
+          tail -5 build.log
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: web-src/build/web
+          force_orphan: true
