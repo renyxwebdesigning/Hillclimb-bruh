@@ -1,0 +1,61 @@
+name: Build downloads
+
+# Push a tag like v1.1 (or run it by hand) to build ready-to-run versions of
+# Hill Rider for Windows, Linux and macOS and attach them to a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-22.04
+            name: Linux
+          - os: macos-latest
+            name: macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install pyinstaller pygame numpy
+      - name: Build
+        run: pyinstaller --noconfirm HillRider.spec
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/HillRider -DestinationPath HillRider-${{ matrix.name }}.zip
+      - name: Zip (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: cd dist && zip -qry ../HillRider-${{ matrix.name }}.zip HillRider
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HillRider-${{ matrix.name }}
+          path: HillRider-${{ matrix.name }}.zip
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: HillRider-*.zip
+          make_latest: true
+          body: |
+            Download the ZIP for your computer, unzip it and start **HillRider** (HillRider.exe on Windows).
+            Windows may warn "Windows protected your PC" because the game isn't signed: click **More info** and then **Run anyway**.

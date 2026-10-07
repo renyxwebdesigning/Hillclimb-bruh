@@ -98,6 +98,12 @@ def top_bar(surf, app, title):
     note = app.note[app.data["music"]]
     app.music_rect = note.get_rect(midright=(app.sound_rect.left - s(22), bar.centery))
     surf.blit(note, app.music_rect)
+    relay = getattr(app, "relay", None)
+    if relay is not None:
+        tag = gfx.text("cond", 20, f"#{app.data['player_id']}", GOLD)
+        r = tag.get_rect(midright=(app.music_rect.left - s(26), bar.centery))
+        surf.blit(tag, r)
+        pygame.draw.circle(surf, (90, 220, 70) if relay.online else (230, 160, 40), (r.left - s(12), bar.centery), s(6))
 
 
 def toggles_hit(app, pos):
@@ -869,96 +875,198 @@ def mode_label(settings):
 MODES = [("free", 0)] + [("race", d) for d in RACE_DISTANCES]
 
 
+class SmallButton:
+    def __init__(self, label, rect, color=(76, 170, 46)):
+        self.label, self.rect, self.color = label, rect, color
+
+    def draw(self, surf, mouse):
+        col = gfx.shade(self.color, 1.15) if self.rect.collidepoint(mouse) else self.color
+        pygame.draw.rect(surf, col, self.rect, border_radius=si(8))
+        gfx.blit_text(surf, "cond", 17, self.label, WHITE, self.rect.center, "center")
+
+    def hit(self, pos):
+        return self.rect.collidepoint(pos)
+
+
+def friend_rows(app, panel, first_y, with_invite=False, room=None):
+    """Draw the friends list; returns [(number, action, rect)] for clicks."""
+    relay = app.relay
+    hits = []
+    friends = sorted(app.data["friends"].items(), key=lambda kv: (not relay.presence.get(kv[0], {}).get("on"), kv[1]))
+    if not friends:
+        gfx.blit_text(app.screen, "cond", 18, "No friends yet - add one by player number.", MUTED,
+                      (panel.x + s(20), first_y + s(8)))
+    for i, (num, name) in enumerate(friends[:7]):
+        y = first_y + i * s(44)
+        row = pygame.Rect(panel.x + s(14), y, panel.w - s(28), s(38))
+        pygame.draw.rect(app.screen, (48, 51, 58), row, border_radius=si(8))
+        pres = relay.presence.get(num, {})
+        online = bool(pres.get("on"))
+        pygame.draw.circle(app.screen, (90, 220, 70) if online else (110, 112, 118), (row.x + s(18), row.centery), s(7))
+        shown = pres.get("name") or name
+        gfx.blit_text(app.screen, "cond", 20, f"{shown}", WHITE, (row.x + s(34), row.centery), "midleft")
+        gfx.blit_text(app.screen, "cond", 16, f"#{num}", MUTED, (row.x + s(200), row.centery), "midleft")
+        x = row.right - s(8)
+        rm = pygame.Rect(0, 0, s(30), s(28))
+        rm.midright = (x, row.centery)
+        pygame.draw.rect(app.screen, (90, 50, 50), rm, border_radius=si(6))
+        gfx.blit_text(app.screen, "cond", 16, "X", WHITE, rm.center, "center")
+        hits.append((num, "remove", rm))
+        x = rm.left - s(8)
+        if with_invite and online:
+            b = pygame.Rect(0, 0, s(84), s(28))
+            b.midright = (x, row.centery)
+            pygame.draw.rect(app.screen, (36, 110, 210), b, border_radius=si(6))
+            gfx.blit_text(app.screen, "cond", 16, "INVITE", WHITE, b.center, "center")
+            hits.append((num, "invite", b))
+        elif not with_invite and online and pres.get("host"):
+            b = pygame.Rect(0, 0, s(84), s(28))
+            b.midright = (x, row.centery)
+            pygame.draw.rect(app.screen, (76, 170, 46), b, border_radius=si(6))
+            gfx.blit_text(app.screen, "cond", 16, "JOIN", WHITE, b.center, "center")
+            hits.append((num, "join", b))
+        elif online:
+            gfx.blit_text(app.screen, "cond", 15, "online" + (" · hosting" if pres.get("host") else ""),
+                          (130, 230, 90), (x, row.centery), "midright")
+    return hits
+
+
+def number_status(app, surf, center):
+    relay = app.relay
+    num = app.data["player_id"]
+    img = gfx.text("black_i", 40, f"#{num}", GOLD, outline=INK, width=3)
+    r = img.get_rect(center=center)
+    surf.blit(img, r)
+    gfx.blit_text(surf, "cond", 18, "YOUR PLAYER NUMBER", MUTED, (r.centerx, r.y - s(4)), "midbottom")
+    on = relay.online
+    pygame.draw.circle(surf, (90, 220, 70) if on else (230, 160, 40), (r.centerx - s(70), r.bottom + s(14)), s(6))
+    gfx.blit_text(surf, "cond", 16, "online" if on else "connecting to the internet...", MUTED,
+                  (r.centerx - s(58), r.bottom + s(14)), "midleft")
+
+
 class OnlineMenu:
     def __init__(self, app):
         self.app = app
         self.bg = background(gfx.W, gfx.H)
-        self.name = TextField(pygame.Rect(gfx.W / 2 - s(200), s(150), s(400), s(50)),
-                              app.data.get("name", ""), "Your name", 16)
-        self.address = TextField(pygame.Rect(gfx.W / 2 + s(40), s(330), s(400), s(50)),
-                                 app.data.get("last_host", ""), "e.g. 192.168.1.23", 40)
-        self.host_btn = Button("HOST GAME", (gfx.W / 2 - s(240), s(430)), (300, 66), "green")
-        self.join_btn = Button("JOIN GAME", (gfx.W / 2 + s(240), s(430)), (300, 66), "blue")
+        L = gfx.W / 2 - s(600)
+        self.name = TextField(pygame.Rect(L + s(20), s(230), s(360), s(48)), app.data.get("name", ""), "Your name", 16)
+        self.join_num = TextField(pygame.Rect(L + s(20), s(410), s(220), s(48)), "", "Number", 8)
+        self.friend_num = TextField(pygame.Rect(gfx.W / 2 + s(20), s(500), s(220), s(48)), "", "Number", 8)
+        self.fields = [self.name, self.join_num, self.friend_num]
+        self.host_btn = Button("HOST GAME", (L + s(200), s(320)), (360, 62), "green")
+        self.join_btn = SmallButton("JOIN", pygame.Rect(L + s(256), s(410), s(124), s(48)), (36, 110, 210))
+        self.add_btn = SmallButton("ADD FRIEND", pygame.Rect(gfx.W / 2 + s(256), s(500), s(150), s(48)), (36, 110, 210))
         self.back_btn = Button("BACK", (s(170), gfx.H - s(56)), (230, 64), "gray")
         self.status = ""
         self.status_ok = True
         self.busy = False
+        self.hits = []
 
     def enter(self, message=""):
         pygame.key.start_text_input()
         self.status, self.status_ok, self.busy = message, not message, False
 
+    def _remember_name(self):
+        name = self.name.text.strip() or "Player"
+        if name != self.app.data.get("name"):
+            self.app.data["name"] = name
+            self.app.persist()
+            self.app.relay.set_name(name)
+
     def handle(self, ev):
         app = self.app
         if self.busy:
             return
-        if self.name.handle(ev) or self.address.handle(ev):
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_RETURN and self.address.active:
-                self.join()
-            return
+        for f in self.fields:
+            if f.handle(ev):
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_RETURN:
+                    break
+                if f is not self.name:
+                    f.text = "".join(c for c in f.text if c.isdigit())
+                return
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_ESCAPE:
+                self._remember_name()
                 app.goto("stages")
             elif ev.key == pygame.K_RETURN:
-                self.join() if self.address.text else self.host()
+                if self.join_num.active:
+                    self.join(self.join_num.text)
+                elif self.friend_num.active:
+                    self.add_friend()
+                else:
+                    self._remember_name()
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if self.host_btn.hit(ev.pos):
-                self.host()
+                self._remember_name()
+                app.audio.play("click")
+                app.host_game()
             elif self.join_btn.hit(ev.pos):
-                self.join()
+                self.join(self.join_num.text)
+            elif self.add_btn.hit(ev.pos):
+                self.add_friend()
             elif self.back_btn.hit(ev.pos):
+                self._remember_name()
                 app.audio.play("click")
                 app.goto("stages")
+            for num, action, rect in self.hits:
+                if rect.collidepoint(ev.pos):
+                    if action == "remove":
+                        app.remove_friend(num)
+                    elif action == "join":
+                        self.join(num)
+                    break
 
-    def _remember(self):
-        self.app.data["name"] = self.name.text.strip() or "Player"
-        self.app.data["last_host"] = self.address.text.strip()
-        self.app.persist()
-
-    def host(self):
-        self._remember()
-        self.app.audio.play("click")
-        self.app.open_session(True)
-
-    def join(self):
-        if not self.address.text.strip():
-            self.status, self.status_ok = "Type your friend's address first.", False
-            self.address.active = True
+    def add_friend(self):
+        num = self.friend_num.text.strip()
+        if len(num) != 6 or num == self.app.data["player_id"]:
+            self.status, self.status_ok = "A player number has 6 digits (and can't be your own).", False
             return
-        self._remember()
+        self.app.add_friend(num, "Player")
+        self.friend_num.text = ""
+        self.status, self.status_ok = f"Added #{num} to your friends.", True
+        self.app.audio.play("buy")
+
+    def join(self, num):
+        num = str(num).strip()
+        if len(num) != 6:
+            self.status, self.status_ok = "Type the host's 6-digit player number.", False
+            self.join_num.active = True
+            return
+        if not self.app.relay.online:
+            self.status, self.status_ok = "Not connected to the internet yet - wait a moment.", False
+            return
+        self._remember_name()
         self.app.audio.play("click")
-        self.busy = True
-        self.status, self.status_ok = f"Connecting to {self.address.text.strip()} ...", True
-        self.app.open_session(False, self.address.text.strip())
+        self.status, self.status_ok = f"Joining #{num} ...", True
+        self.app.join_game(num)
 
     def draw(self, surf, mouse, now):
+        app = self.app
         surf.blit(self.bg, (0, 0))
-        top_bar(surf, self.app, "PLAY ONLINE")
-        gfx.blit_text(surf, "cond", 20, "YOUR NAME", MUTED, (self.name.rect.x, self.name.rect.y - s(6)), "bottomleft")
+        top_bar(surf, app, "PLAY WITH FRIENDS")
+        L = gfx.W / 2 - s(600)
+        number_status(app, surf, (L + s(200), s(140)))
+        gfx.blit_text(surf, "cond", 18, "YOUR NAME", MUTED, (self.name.rect.x, self.name.rect.y - s(4)), "bottomleft")
         self.name.draw(surf, now)
-        left = pygame.Rect(gfx.W / 2 - s(440), s(250), s(400), s(140))
-        pygame.draw.rect(surf, (36, 38, 44), left, border_radius=si(14))
-        gfx.blit_text(surf, "cond", 24, "HOST", WHITE, (left.x + s(20), left.y + s(16)))
-        for i, line in enumerate(("Start a game on this PC.", "Friends join with your address,",
-                                  "you pick the map and the race.")):
-            gfx.blit_text(surf, "cond", 18, line, MUTED, (left.x + s(20), left.y + s(54) + i * s(24)))
-        gfx.blit_text(surf, "cond", 20, "FRIEND'S ADDRESS", MUTED, (self.address.rect.x, self.address.rect.y - s(6)),
-                      "bottomleft")
-        gfx.blit_text(surf, "cond", 18, "Ask the host for it (Ctrl+V pastes)", MUTED,
-                      (self.address.rect.x, self.address.rect.y - s(56)), "bottomleft")
-        gfx.blit_text(surf, "cond", 24, "JOIN", WHITE, (self.address.rect.x, self.address.rect.y - s(80)), "bottomleft")
-        self.address.draw(surf, now)
-        pressed = pygame.mouse.get_pressed()[0]
-        self.host_btn.draw(surf, mouse, pressed)
-        self.join_btn.draw(surf, mouse, pressed)
-        self.back_btn.draw(surf, mouse, pressed)
+        self.host_btn.draw(surf, mouse, pygame.mouse.get_pressed()[0])
+        gfx.blit_text(surf, "cond", 18, "JOIN A GAME BY THE HOST'S NUMBER", MUTED,
+                      (self.join_num.rect.x, self.join_num.rect.y - s(4)), "bottomleft")
+        self.join_num.draw(surf, now)
+        self.join_btn.draw(surf, mouse)
+        panel = pygame.Rect(gfx.W / 2, s(84), s(600), s(390))
+        pygame.draw.rect(surf, (36, 38, 44), panel, border_radius=si(14))
+        gfx.blit_text(surf, "cond", 24, f"FRIENDS ({len(app.data['friends'])})", WHITE, (panel.x + s(20), panel.y + s(14)))
+        self.hits = friend_rows(app, panel, panel.y + s(60))
+        gfx.blit_text(surf, "cond", 18, "ADD A FRIEND BY PLAYER NUMBER", MUTED,
+                      (self.friend_num.rect.x, self.friend_num.rect.y - s(4)), "bottomleft")
+        self.friend_num.draw(surf, now)
+        self.add_btn.draw(surf, mouse)
         if self.status:
-            gfx.blit_text(surf, "cond", 22, self.status, (130, 230, 90) if self.status_ok else (255, 110, 96),
-                          (gfx.W / 2, s(500)), "center")
-        tips = ("Same Wi-Fi / network: just use the host's local address.",
-                "Over the internet: the host forwards TCP port 47777 on the router, or you both use Tailscale / ZeroTier.")
-        for i, t in enumerate(tips):
-            gfx.blit_text(surf, "cond", 16, t, (130, 134, 142), (gfx.W / 2, s(560) + i * s(22)), "center")
+            gfx.blit_text(surf, "cond", 20, self.status, (130, 230, 90) if self.status_ok else (255, 110, 96),
+                          (L + s(20), s(500)), "midleft")
+        gfx.blit_text(surf, "cond", 16, "Tell friends your number. They add you, and you invite each other "
+                      "from the lobby - no IP addresses needed.", (130, 134, 142), (gfx.W / 2, s(588)), "center")
+        self.back_btn.draw(surf, mouse, pygame.mouse.get_pressed()[0])
 
 
 class Lobby:
@@ -966,26 +1074,41 @@ class Lobby:
         self.app = app
         self.bg = background(gfx.W, gfx.H)
         cx = gfx.W / 2 + s(250)
-        self.stage_sel = Selector("MAP", (cx, s(150)))
-        self.mode_sel = Selector("MODE", (cx, s(232)))
-        self.vehicle_sel = Selector("YOUR VEHICLE", (cx, s(330)))
-        self.driver_sel = Selector("YOUR DRIVER", (cx, s(412)))
+        self.stage_sel = Selector("MAP", (cx, s(130)))
+        self.mode_sel = Selector("MODE", (cx, s(204)))
+        self.vehicle_sel = Selector("YOUR VEHICLE", (cx, s(278)))
+        self.driver_sel = Selector("YOUR DRIVER", (cx, s(352)))
+        self.invite_num = TextField(pygame.Rect(s(54), s(512), s(200), s(44)), "", "Player number", 8)
+        self.invite_btn = SmallButton("INVITE", pygame.Rect(s(266), s(512), s(110), s(44)), (36, 110, 210))
         self.leave_btn = Button("LEAVE", (s(170), gfx.H - s(56)), (230, 64), "gray")
         self.start_btn = Button("START", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green",
                                 icon=checker_icon(s(34)))
-        self.public_ip = None
-        self.local_ips = []
+        self.hits = []
+        self.msg = ""
 
     def enter(self):
-        import net
-        if self.app.session and self.app.session.is_host:
-            self.local_ips = net.local_addresses()
-            if self.public_ip is None:
-                net.fetch_public_ip(lambda ip: setattr(self, "public_ip", ip or "unknown"))
+        pygame.key.start_text_input()
+        self.msg = ""
+
+    def invite(self, num):
+        num = str(num).strip()
+        if len(num) != 6 or num == self.app.data["player_id"]:
+            self.msg = "Type a 6-digit player number."
+            return
+        self.app.relay.invite(num, self.app.data["player_id"])
+        self.app.add_friend(num, self.app.relay.presence.get(num, {}).get("name", "Player"))
+        self.msg = f"Invite sent to #{num}."
+        self.app.audio.play("click")
+        self.invite_num.text = ""
 
     def handle(self, ev):
         app, ses = self.app, self.app.session
         if ses is None:
+            return
+        if ses.is_host and self.invite_num.handle(ev):
+            self.invite_num.text = "".join(c for c in self.invite_num.text if c.isdigit())
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_RETURN:
+                self.invite(self.invite_num.text)
             return
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_ESCAPE:
@@ -1000,6 +1123,16 @@ class Lobby:
                 app.audio.play("click")
                 ses.start()
                 return
+            if ses.is_host and self.invite_btn.hit(ev.pos):
+                self.invite(self.invite_num.text)
+                return
+            for num, action, rect in self.hits:
+                if rect.collidepoint(ev.pos):
+                    if action == "invite":
+                        self.invite(num)
+                    elif action == "remove":
+                        app.remove_friend(num)
+                    return
             if ses.is_host:
                 d = self.stage_sel.hit(ev.pos)
                 if d:
@@ -1026,45 +1159,84 @@ class Lobby:
 
     def draw(self, surf, mouse, now):
         app, ses = self.app, self.app.session
-        surf.blit(self.bg, (0, 0))
-        top_bar(surf, app, "ONLINE LOBBY" + ("  ·  YOU ARE THE HOST" if ses.is_host else ""))
-        panel = pygame.Rect(s(40), s(96), s(560), s(470))
-        pygame.draw.rect(surf, (36, 38, 44), panel, border_radius=si(14))
-        gfx.blit_text(surf, "cond", 24, f"PLAYERS ({len(ses.players)})", WHITE, (panel.x + s(20), panel.y + s(14)))
         from config import VEHICLE_BY_KEY
         from drivers import DRIVER_BY_KEY
-        for i, (pid, p) in enumerate(sorted(ses.players.items())):
-            y = panel.y + s(62) + i * s(48)
-            row = pygame.Rect(panel.x + s(14), y, panel.w - s(28), s(42))
+        surf.blit(self.bg, (0, 0))
+        title = f"ROOM #{ses.room}" if ses.room else "ONLINE LOBBY"
+        top_bar(surf, app, title + ("  ·  YOU ARE THE HOST" if ses.is_host else ""))
+        if not ses.welcomed:
+            gfx.blit_text(surf, "black_i", 36, f"Joining #{ses.room} ...", WHITE, (gfx.W / 2, gfx.H / 2), "center",
+                          outline=INK, width=3)
+            self.leave_btn.draw(surf, mouse, False)
+            return
+        panel = pygame.Rect(s(40), s(84), s(560), s(380))
+        pygame.draw.rect(surf, (36, 38, 44), panel, border_radius=si(14))
+        gfx.blit_text(surf, "cond", 24, f"PLAYERS ({len(ses.players)})", WHITE, (panel.x + s(20), panel.y + s(12)))
+        for i, (pid, p) in enumerate(sorted(ses.players.items(), key=lambda kv: kv[0] != ses.host_id)):
+            y = panel.y + s(54) + i * s(40)
+            row = pygame.Rect(panel.x + s(14), y, panel.w - s(28), s(36))
             pygame.draw.rect(surf, (48, 51, 58), row, border_radius=si(8))
-            pygame.draw.circle(surf, p["color"], (row.x + s(22), row.centery), s(10))
+            pygame.draw.circle(surf, p["color"], (row.x + s(20), row.centery), s(9))
             me = " (you)" if pid == ses.my_id else ""
-            host = "  ★" if pid == 0 else ""
-            gfx.blit_text(surf, "cond", 22, p["name"] + me + host, WHITE, (row.x + s(42), row.centery), "midleft")
+            host = "  ★" if pid == ses.host_id else ""
+            gfx.blit_text(surf, "cond", 20, p["name"] + me + host, WHITE, (row.x + s(38), row.centery), "midleft")
             info = f"{VEHICLE_BY_KEY[p['vehicle']]['name']} · {DRIVER_BY_KEY.get(p['driver'], DRIVERS[0])['name']}"
-            gfx.blit_text(surf, "cond", 17, info, MUTED, (row.right - s(12), row.centery), "midright")
+            gfx.blit_text(surf, "cond", 16, info, MUTED, (row.right - s(12), row.centery), "midright")
         st_name = next(st["name"] for st in STAGES if st["key"] == ses.settings["stage"])
         self.stage_sel.draw(surf, st_name.upper(), ses.is_host)
         self.mode_sel.draw(surf, mode_label(ses.settings), ses.is_host)
-        from config import VEHICLE_BY_KEY as VB
-        from drivers import DRIVER_BY_KEY as DB
-        self.vehicle_sel.draw(surf, VB[app.data["vehicle"]]["name"].upper())
-        self.driver_sel.draw(surf, DB.get(app.data["driver"], DRIVERS[0])["name"].upper())
-        info = pygame.Rect(gfx.W / 2 + s(70), s(470), s(560), s(96))
-        pygame.draw.rect(surf, (36, 38, 44), info, border_radius=si(12))
+        self.vehicle_sel.draw(surf, VEHICLE_BY_KEY[app.data["vehicle"]]["name"].upper())
+        self.driver_sel.draw(surf, DRIVER_BY_KEY.get(app.data["driver"], DRIVERS[0])["name"].upper())
+        friends = pygame.Rect(gfx.W / 2 + s(30), s(392), s(600), s(232))
+        pygame.draw.rect(surf, (36, 38, 44), friends, border_radius=si(14))
+        self.hits = []
         if ses.is_host:
-            gfx.blit_text(surf, "cond", 18, "INVITE FRIENDS WITH THIS ADDRESS:", GOLD, (info.x + s(16), info.y + s(10)))
-            local = ", ".join(self.local_ips) or "?"
-            gfx.blit_text(surf, "cond", 20, f"Same network:  {local}", WHITE, (info.x + s(16), info.y + s(38)))
-            gfx.blit_text(surf, "cond", 20, f"Internet:  {self.public_ip or '...'}   (port 47777 must be forwarded)",
-                          WHITE, (info.x + s(16), info.y + s(64)))
+            gfx.blit_text(surf, "cond", 20, "INVITE FRIENDS", WHITE, (friends.x + s(18), friends.y + s(10)))
+            self.hits = friend_rows(app, friends, friends.y + s(44), with_invite=True)
+            gfx.blit_text(surf, "cond", 18, "INVITE ANY PLAYER BY NUMBER", MUTED,
+                          (self.invite_num.rect.x, self.invite_num.rect.y - s(4)), "bottomleft")
+            self.invite_num.draw(surf, now)
+            self.invite_btn.draw(surf, mouse)
+            hint = self.msg or f"Friends can also join with your number #{app.data['player_id']}"
+            gfx.blit_text(surf, "cond", 17, hint, (130, 230, 90) if self.msg else MUTED, (s(54), s(574)))
         else:
             dots = "." * (int(now * 2) % 4)
-            gfx.blit_text(surf, "cond", 22, f"Waiting for the host to start{dots}", WHITE, info.center, "center")
+            gfx.blit_text(surf, "cond", 22, f"Waiting for the host to start{dots}", WHITE, friends.center, "center")
         pressed = pygame.mouse.get_pressed()[0]
         self.leave_btn.draw(surf, mouse, pressed)
         if ses.is_host:
             self.start_btn.draw(surf, mouse, pressed)
+
+
+class InvitePopup:
+    def __init__(self, app):
+        self.app = app
+        self.panel = pygame.Rect(0, 0, s(520), s(190))
+        self.panel.center = (gfx.W / 2, gfx.H / 2)
+        self.join = SmallButton("JOIN", pygame.Rect(0, 0, s(180), s(50)), (76, 170, 46))
+        self.no = SmallButton("NO THANKS", pygame.Rect(0, 0, s(180), s(50)), (110, 112, 118))
+        self.join.rect.bottomright = (self.panel.centerx - s(10), self.panel.bottom - s(20))
+        self.no.rect.bottomleft = (self.panel.centerx + s(10), self.panel.bottom - s(20))
+
+    def draw(self, surf, mouse, inv):
+        dim = pygame.Surface((gfx.W, gfx.H), pygame.SRCALPHA)
+        dim.fill((8, 10, 14, 150))
+        surf.blit(dim, (0, 0))
+        pygame.draw.rect(surf, (30, 32, 36), self.panel, border_radius=si(16))
+        pygame.draw.rect(surf, GOLD, self.panel, si(3), border_radius=si(16))
+        gfx.blit_text(surf, "black_i", 34, f"{inv.get('name', 'Someone')} invites you!", WHITE,
+                      (self.panel.centerx, self.panel.y + s(42)), "center", outline=INK, width=2)
+        gfx.blit_text(surf, "cond", 18, f"Player #{inv['from']} is hosting a game", MUTED,
+                      (self.panel.centerx, self.panel.y + s(84)), "center")
+        self.join.draw(surf, mouse)
+        self.no.draw(surf, mouse)
+
+    def click(self, pos):
+        if self.join.hit(pos):
+            return "join"
+        if self.no.hit(pos):
+            return "no"
+        return None
 
 
 class RaceResults:

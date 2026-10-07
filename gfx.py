@@ -4,19 +4,28 @@ The UI is designed at 1280x720 and scaled by U to whatever window size the
 desktop allows, so every layout number in the code is in 720p units.
 """
 import math
+import os
 import subprocess
+import sys
 
 import pygame
 
 W, H, U = 1280, 720, 1.0
 CANVAS = None       # the opaque off-screen surface everything is drawn on
 
+def resource(*parts):
+    """Path to a bundled file, also inside a PyInstaller build."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *parts)
+
+
 FONTS = {
-    "cond": ("DejaVu Sans:style=Condensed Bold", "dejavusanscondensed,dejavusans", True, False),
-    "cond_i": ("DejaVu Sans:style=Condensed Bold Oblique", "dejavusanscondensed,dejavusans", True, True),
-    "black_i": ("Lato:style=Black Italic", "lato,dejavusans", True, True),
-    "heavy": ("Lato:style=Heavy", "lato,dejavusans", True, False),
-    "bold": ("Lato:style=Bold", "lato,dejavusans", True, False),
+    "cond": ("DejaVuSansCondensed-Bold.ttf", "DejaVu Sans:style=Condensed Bold", "dejavusanscondensed,arial", True, False),
+    "cond_i": ("DejaVuSansCondensed-BoldOblique.ttf", "DejaVu Sans:style=Condensed Bold Oblique",
+               "dejavusanscondensed,arial", True, True),
+    "black_i": ("Lato-BlackItalic.ttf", "Lato:style=Black Italic", "lato,arial", True, True),
+    "heavy": ("Lato-Heavy.ttf", "Lato:style=Heavy", "lato,arial", True, False),
+    "bold": ("Lato-Bold.ttf", "Lato:style=Bold", "lato,arial", True, False),
 }
 _paths = {}
 _fonts = {}
@@ -48,12 +57,16 @@ def si(v):
 
 def _path(kind):
     if kind not in _paths:
-        pattern, fallback, bold, italic = FONTS[kind]
-        try:
-            p = subprocess.run(["fc-match", "-f", "%{file}", pattern],
-                               capture_output=True, text=True, timeout=2).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
+        bundled, pattern, fallback, bold, italic = FONTS[kind]
+        p = resource("assets", "fonts", bundled)
+        if not os.path.exists(p):
             p = ""
+            if sys.platform.startswith("linux"):
+                try:
+                    p = subprocess.run(["fc-match", "-f", "%{file}", pattern],
+                                       capture_output=True, text=True, timeout=2).stdout.strip()
+                except (OSError, subprocess.SubprocessError):
+                    p = ""
         _paths[kind] = p or pygame.font.match_font(fallback, bold=bold, italic=italic)
     return _paths[kind]
 

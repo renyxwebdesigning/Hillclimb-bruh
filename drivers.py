@@ -10,7 +10,7 @@ import pygame
 
 import gfx
 
-ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+ASSETS = os.path.join(getattr(__import__("sys"), "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "assets")
 
 DRIVERS = [
     dict(key="default", name="Racer", voice=("de", 50, 165),

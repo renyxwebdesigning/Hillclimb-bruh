@@ -1,17 +1,32 @@
 # Hill Rider
 
-A 2D hill-climb driving game written in Python with pygame. Drive as far as you can over procedurally generated hills, bridges and tunnels, collect coins, pull off flips, upgrade your vehicle, and race your friends online.
+A 2D hill-climb driving game. Drive as far as you can over hills, bridges and tunnels, collect coins, pull off flips, upgrade your vehicles and race your friends online.
 
-## Install and run
+## Download and play (no installing)
 
-You need Python 3.10 or newer.
+| Computer | Download |
+|---|---|
+| Windows | [HillRider-Windows.zip](https://github.com/renyxwebdesigning/Hillclimb-bruh/releases/latest/download/HillRider-Windows.zip) |
+| Linux | [HillRider-Linux.zip](https://github.com/renyxwebdesigning/Hillclimb-bruh/releases/latest/download/HillRider-Linux.zip) |
+| macOS | [HillRider-macOS.zip](https://github.com/renyxwebdesigning/Hillclimb-bruh/releases/latest/download/HillRider-macOS.zip) |
 
-```
-pip install pygame numpy
-python3 main.py
-```
+1. Download the ZIP for your computer.
+2. Unzip it (on Windows: right-click → **Extract All…**).
+3. Open the `HillRider` folder and double-click **HillRider** (`HillRider.exe` on Windows).
 
-`espeak` (or `espeak-ng`) is optional. With it installed, the drivers say their lines out loud.
+Windows may show "Windows protected your PC" because the game isn't signed. Click **More info**, then **Run anyway**.
+
+## Playing with friends
+
+Every player gets a permanent **player number** (for example `#482913`), shown at the top right of the menus. The game goes online by itself; there are no IP addresses or router settings.
+
+1. Click **PLAY ONLINE**.
+2. Tell your friends your number, or add theirs with **ADD FRIEND**. Friends who are online get a green dot.
+3. One player clicks **HOST GAME**. In the lobby, click **INVITE** next to a friend, or invite any player by number.
+4. The invited player gets a popup and clicks **JOIN**. (Friends can also type the host's number under **JOIN**.)
+5. The host picks the map and mode (Free Ride, or a 500 / 1000 / 2000 m race) and presses **START**.
+
+Online play goes through a free public relay server (HiveMQ, with fallbacks), so it needs an internet connection. Only car positions, names and player numbers are sent.
 
 ## Controls
 
@@ -31,19 +46,25 @@ The on-screen pedals, boost and horn buttons also work with the mouse.
 
 ## Features
 
-- 4 stages: Countryside, Desert, Arctic (slippery) and Moon (low gravity). The first three have a day/night cycle.
+- 4 stages: Countryside, Desert, Arctic (slippery) and Moon (low gravity). The first three have a day/night cycle with headlights.
 - 6 vehicles: Jeep, Dirt Bike, Chopper, Monster Truck, Supercar and Rocket, each with its own upgrades (engine, suspension, tires, boost).
-- 11 drivers to choose from.
+- 11 drivers to choose from, each with their own voice.
 - Bridges over gorges, tunnels through hills, coins, air-time and flip bonuses.
 - Random engine seizures: black smoke, a swearing driver, and 5-30 hits of Enter to fix.
-- All graphics, music and sound effects are generated in code.
 
-## Playing online
+## Running from the source code
 
-1. The host clicks **PLAY ONLINE**, then **HOST GAME**. The lobby shows the address to share.
-2. Friends click **PLAY ONLINE**, enter that address, then **JOIN GAME**.
-3. The host picks the map and mode (Free Ride, or a 500 / 1000 / 2000 m race) and presses **START**.
+You need Python 3.10 or newer.
 
-On the same network, use the host's local address (for example `192.168.x.x`). Over the internet, the host must forward **TCP port 47777** on their router, or both players can use a VPN such as Tailscale or ZeroTier and use that address instead.
+```
+pip install pygame numpy
+python main.py
+```
 
-Progress is saved in `~/.hill_rider/save.json`.
+On Python 3.14 use `pip install pygame-ce numpy` instead.
+
+Progress and your player number are saved in `~/.hill_rider/save.json`.
+
+## Credits
+
+Fonts: DejaVu Sans (Bitstream Vera license) and Lato (SIL Open Font License), see `assets/fonts/`.

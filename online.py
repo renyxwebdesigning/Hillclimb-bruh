@@ -8,11 +8,12 @@ import math
 import time
 
 import net
+import relay as relay_mod
 from config import VEHICLE_BY_KEY
 
 COLORS = [(255, 214, 60), (90, 200, 255), (255, 110, 150), (130, 230, 90), (255, 150, 60),
           (190, 140, 255), (240, 240, 240), (80, 240, 210)]
-SEND_HZ = 20
+SEND_HZ = 15
 
 
 class RemoteWheel:
@@ -91,7 +92,8 @@ def pack_state(run):
 
 
 class Session:
-    def __init__(self, hosting, name, vehicle, driver, address=None):
+    def __init__(self, hosting, name, vehicle, driver, address=None, relay=None, room=None):
+        """Direct TCP (address) or, with `relay`, internet play by player number (`room` = host's number)."""
         self.is_host = hosting
         self.name = name
         self.players = {}
@@ -106,14 +108,29 @@ class Session:
         self.to_lobby = False
         self._send_t = 0.0
         self._first_finish = None
-        if hosting:
+        self.welcomed = hosting
+        self._join_started = time.monotonic()
+        self.room = None
+        if relay is not None:
+            me = int(relay.number)
+            if hosting:
+                self.net = relay_mod.RoomHost(relay)
+                self.my_id = self.host_id = me
+                self.room = relay.number
+            else:
+                self.net = relay_mod.RoomClient(relay, room)
+                self.my_id, self.host_id = me, int(room)
+                self.room = str(room)
+        elif hosting:
             self.net = net.Host()
-            self.my_id = 0
-            self.players[0] = dict(name=name, vehicle=vehicle, driver=driver, color=COLORS[0])
+            self.my_id = self.host_id = 0
         else:
             host, port = net.parse_address(address)
             self.net = net.Client(host, port)
-            self.my_id = None
+            self.my_id, self.host_id = None, 0
+        if hosting:
+            self.players[self.my_id] = dict(name=name, vehicle=vehicle, driver=driver, color=COLORS[0])
+        else:
             self.net.send({"t": "hello", "v": net.VERSION, "name": name, "vehicle": vehicle, "driver": driver})
 
     # --------------------------------------------------------------- helpers
@@ -151,6 +168,9 @@ class Session:
                 pass
         for car in self.remote.values():
             car.update(dt)
+        if not self.welcomed and not self.error and time.monotonic() - self._join_started > 10:
+            self.error = (f"Player #{self.room} is not hosting a game right now." if self.room
+                          else "The host did not answer.")
         if self.is_host and self.phase == "race" and self.results is None and self.finish:
             everyone = all(pid in self.finish for pid in self.players)
             if everyone or time.monotonic() - self._first_finish > 45:
@@ -163,8 +183,12 @@ class Session:
                 self.net.send(cid, {"t": "error", "text": "Different game version - update Hill Rider on both PCs."})
                 self.net.drop(cid)
                 return
-            self.players[cid] = dict(name=str(msg.get("name", "Player"))[:16], vehicle=msg.get("vehicle", "jeep"),
-                                     driver=msg.get("driver", "default"), color=COLORS[cid % len(COLORS)])
+            if msg.get("vehicle") not in VEHICLE_BY_KEY:
+                msg["vehicle"] = "jeep"
+            used = {tuple(p["color"]) for p in self.players.values()}
+            color = next((c for c in COLORS if c not in used), COLORS[len(self.players) % len(COLORS)])
+            self.players[cid] = dict(name=str(msg.get("name", "Player"))[:16], vehicle=msg["vehicle"],
+                                     driver=msg.get("driver", "default"), color=color)
             self.net.send(cid, {"t": "welcome", "id": cid})
             self.net.broadcast(self._lobby_msg())
             if self.phase == "free":
@@ -192,6 +216,7 @@ class Session:
         t = msg.get("t")
         if t == "welcome":
             self.my_id = msg["id"]
+            self.welcomed = True
         elif t == "lobby":
             self._set_players(msg["players"])
             self.settings = msg["settings"]
@@ -275,15 +300,15 @@ class Session:
         self._send_t = 1.0 / SEND_HZ
         s = pack_state(run)
         if self.is_host:
-            self.net.broadcast({"t": "state", "id": 0, "s": s})
+            self.net.broadcast({"t": "state", "id": self.my_id, "s": s})
         else:
             self.net.send({"t": "state", "s": s})
 
     def send_event(self, ev):
         if self.is_host:
-            self.net.broadcast({"t": "event", "id": 0, "e": ev})
+            self.net.broadcast({"t": "event", "id": self.my_id, "e": ev})
             if ev.get("kind") == "finish":
-                self._event(0, dict(ev))
+                self._event(self.my_id, dict(ev))
         else:
             self.net.send({"t": "event", "e": ev})
             if ev.get("kind") == "finish" and self.my_id is not None:

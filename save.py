@@ -25,10 +25,27 @@ def default():
         "horn": "puppy",
         "name": "",
         "last_host": "",
+        "player_id": "",
+        "friends": {},
     }
 
 
+def _ensure_id(data):
+    pid = str(data.get("player_id", ""))
+    if not (pid.isdigit() and len(pid) == 6):
+        import secrets
+        data["player_id"] = str(secrets.randbelow(900000) + 100000)
+        save(data)
+    data["friends"] = {k: str(v) for k, v in data.get("friends", {}).items() if str(k).isdigit() and len(str(k)) == 6}
+    return data
+
+
 def load():
+    data = _load()
+    return _ensure_id(data)
+
+
+def _load():
     data = default()
     try:
         stored = json.loads(PATH.read_text())
@@ -36,7 +53,8 @@ def load():
         return data
     if not isinstance(stored, dict):
         return data
-    for k in ("coins", "best", "stage", "vehicle", "sound", "music", "driver", "horn", "name", "last_host"):
+    for k in ("coins", "best", "stage", "vehicle", "sound", "music", "driver", "horn", "name", "last_host",
+              "player_id", "friends"):
         if k in stored and type(stored[k]) is type(data[k]):
             data[k] = stored[k]
     levels = stored.get("levels", {})

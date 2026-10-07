@@ -29,6 +29,7 @@ from drivers import DRIVER_BY_KEY  # noqa: E402
 from game import Run, black_smoke  # noqa: E402
 from hud import Hud  # noqa: E402
 from online import Session  # noqa: E402
+from relay import Relay  # noqa: E402
 from render import Art, CarView, WorldRenderer  # noqa: E402
 from terrain import Terrain  # noqa: E402
 
@@ -59,16 +60,21 @@ class App:
         self.window = pygame.display.set_mode((w, h))
         pygame.display.set_caption(TITLE)
         self.screen = gfx.init(w, h)            # opaque canvas; copied to the window each frame
-        try:
-            pygame.scrap.init()
-        except (pygame.error, AttributeError):
-            pass
+        if not hasattr(pygame.scrap, "get_text"):      # old pygame needs scrap.init() for pasting
+            try:
+                pygame.scrap.init()
+            except (pygame.error, AttributeError):
+                pass
         pygame.key.stop_text_input()
         self.clock = pygame.time.Clock()
         self.data = save.load()
         self.audio = Audio()
         self.audio.enabled = self.data["sound"]
         self.audio.music_on = self.data["music"]
+        self.relay = Relay(self.data["player_id"], self.data.get("name") or "Player")
+        for num in self.data["friends"]:
+            self.relay.watch(num)
+        self.invite = None
         self.art = Art()
         self.hud = Hud()
         self.coin_icon = sprites.coin(5, gfx.si(15))
@@ -91,6 +97,7 @@ class App:
         self._connecting = None
         self._waiting_connect = False
         self.race_board = ui.RaceResults(self)
+        self.invite_popup = ui.InvitePopup(self)
         self.remote_bubbles = {}
         self._remote_smoke = 0.0
         self.running = True
@@ -208,12 +215,44 @@ class App:
         threading.Thread(target=connect, daemon=True).start()
         self._waiting_connect = True
 
+    # ------------------------------------------------- player numbers / friends
+    def add_friend(self, num, name):
+        num = str(num)
+        if num == self.data["player_id"]:
+            return
+        if num not in self.data["friends"]:
+            self.relay.watch(num)
+        self.data["friends"][num] = name if name and name != "Player" else self.data["friends"].get(num, name)
+        self.persist()
+
+    def remove_friend(self, num):
+        if self.data["friends"].pop(str(num), None) is not None:
+            self.relay.unwatch(str(num))
+            self.persist()
+
+    def host_game(self):
+        if self.session:
+            self.session.leave()
+        self.session = Session(True, self.data.get("name") or "Player", self.data["vehicle"], self.data["driver"],
+                               relay=self.relay)
+        self.relay.set_hosting(True)
+        self.goto("lobby")
+
+    def join_game(self, number):
+        if self.session:
+            self.session.leave()
+        self.relay.set_hosting(False)
+        self.session = Session(False, self.data.get("name") or "Player", self.data["vehicle"], self.data["driver"],
+                               relay=self.relay, room=str(number))
+        self.goto("lobby")
+
     def leave_session(self, message=""):
         if self.run is not None and self.run.online:
             self._bank_run_coins()
         if self.session:
             self.session.leave()
         self.session = None
+        self.relay.set_hosting(False)
         self.goto("online", message)
 
     def _poll_session(self, dt):
@@ -225,10 +264,16 @@ class App:
                 self.session = self._connecting
                 self.goto("lobby")
             self._connecting = None
+        self.relay.update()
+        if self.relay.invites and self.invite is None:
+            self.invite = self.relay.invites.pop(0)
         ses = self.session
         if ses is None:
             return
         ses.update(dt)
+        for pid, p in ses.players.items():
+            if pid != ses.my_id and len(str(pid)) == 6 and self.data["friends"].get(str(pid)) != p["name"]:
+                self.add_friend(str(pid), p["name"])
         if ses.error:
             self.leave_session(ses.error)
             return
@@ -270,14 +315,33 @@ class App:
                 self.play_frame(dt, mouse)
             elif self.state == "results":
                 self.results.draw(self.screen, mouse, self.now, dt)
+            if self.invite is not None:
+                self.invite_popup.draw(self.screen, mouse, self.invite)
             self.window.blit(self.screen, (0, 0))
             pygame.display.flip()
         if self.session:
             self.session.leave()
+        self.relay.close()
         self.persist()
         pygame.quit()
 
     def handle(self, ev):
+        if self.invite is not None:
+            act = None
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                act = self.invite_popup.click(ev.pos)
+            elif ev.type == pygame.KEYDOWN and ev.key in (pygame.K_RETURN, pygame.K_j):
+                act = "join"
+            elif ev.type == pygame.KEYDOWN and ev.key in (pygame.K_ESCAPE, pygame.K_n):
+                act = "no"
+            if act == "join":
+                inv, self.invite = self.invite, None
+                self.add_friend(str(inv["from"]), inv.get("name", "Player"))
+                self._bank_run_coins()
+                self.join_game(str(inv["from"]))
+            elif act == "no":
+                self.invite = None
+            return
         if self.state in self.screens:
             self.screens[self.state].handle(ev)
         elif self.state == "results":

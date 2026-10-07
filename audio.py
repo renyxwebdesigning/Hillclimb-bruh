@@ -6,6 +6,7 @@ If there is no sound device the game runs silently.
 """
 import random
 import shutil
+from pathlib import Path
 import subprocess
 import threading
 from collections import deque
@@ -248,7 +249,10 @@ class Voices:
         i = random.randrange(len(d["lines"])) if index is None else index % len(d["lines"])
         snd = self.sounds.get((key, i))
         if snd is None:
-            path = self._path(key, i)
+            from gfx import resource
+            path = Path(resource("assets", "voice", f"{key}_{i}.wav"))
+            if not path.exists():
+                path = self._path(key, i)
             if path.exists():
                 try:
                     snd = self.sounds[(key, i)] = pygame.mixer.Sound(str(path))
