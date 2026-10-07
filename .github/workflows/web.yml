@@ -25,7 +25,7 @@ jobs:
           mkdir web-src
           cp *.py web-src/
           cp -r assets web-src/
-          if ! PYTHONUNBUFFERED=1 python -u -m pygbag --build --title "Hill Rider" web-src > build.log 2>&1; then
+          if ! PYTHONUNBUFFERED=1 python -u -m pygbag --build --title "Hill Rider" --template web/loader.tmpl web-src > build.log 2>&1; then
             echo "::error::$(grep -v ' : assets/' build.log | tail -25 | sed 's/%/%25/g' | tr '\n' '~' | sed 's/~/%0A/g')"
             exit 1
           fi

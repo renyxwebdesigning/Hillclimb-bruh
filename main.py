@@ -432,9 +432,17 @@ class App:
 
     async def loop_async(self):
         """The same loop for the browser, which needs to get control back every frame."""
+        first = True
         while self.running:
             self.frame()
             await asyncio.sleep(0)
+            if first:                   # the first frame is on screen: fade out the loading page
+                first = False
+                try:
+                    import platform as browser
+                    browser.window.hr_stage("done")
+                except Exception:
+                    pass
         self.shutdown()
 
     def shutdown(self):
