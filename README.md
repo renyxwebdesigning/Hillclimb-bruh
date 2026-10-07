@@ -6,7 +6,7 @@ A 2D hill-climb driving game. Drive as far as you can over hills, bridges and tu
 
 **https://renyxwebdesigning.github.io/Hillclimb-bruh/**
 
-Works on any computer or phone (hold the phone sideways). Online play and driver voices need the download version.
+Works on any computer or phone (hold the phone sideways). Online play needs the download version.
 
 ## Download and play (no installing)
 
