@@ -218,7 +218,7 @@ class HomeMenu:
         pygame.draw.circle(surf, (90, 220, 70) if relay.online else (230, 160, 40), (x + s(6), y + s(12)), s(6))
         r = gfx.blit_text(surf, "cond", 22, f"#{app.data['player_id']}", GOLD, (x + s(20), y + s(12)), "midleft")
         from config import WEB
-        status = "browser version" if WEB else "online" if relay.online else "connecting..."
+        status = "browser" if WEB else "online" if relay.online else "connecting..."
         gfx.blit_text(surf, "cond", 16, status, MUTED,
                       (r.right + s(8), y + s(13)), "midleft")
         surf.blit(app.coin_icon, app.coin_icon.get_rect(midright=(card.right - s(70), y + s(12))))

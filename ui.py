@@ -1423,7 +1423,8 @@ class Settings:
         self.gfx_sel.draw(surf, "HIGH" if app.data["graphics"] == "high" else "LOW (FASTER)")
         self.full_sel.draw(surf, "ON" if app.data["fullscreen"] else "OFF")
         self.ghost_sel.draw(surf, "SHOW" if app.data.get("ghosts", True) else "HIDE")
-        keys = pygame.Rect(s(50), s(496), s(540), s(160))
+        keys = pygame.Rect(0, 0, s(460), s(150))
+        keys.midtop = (gfx.W / 2 + s(270), s(484))
         pygame.draw.rect(surf, (36, 38, 44), keys, border_radius=si(14))
         gfx.blit_text(surf, "cond", 20, "CONTROLS", WHITE, (keys.x + s(18), keys.y + s(12)))
         rows = [("Gas / Brake", "Right / Left  (or D / A)"), ("Boost  ·  Horn  ·  Lights", "Space  ·  H  ·  L"),
@@ -1433,7 +1434,7 @@ class Settings:
             gfx.blit_text(surf, "cond", 17, what, MUTED, (keys.x + s(18), y))
             gfx.blit_text(surf, "cond", 17, key, WHITE, (keys.right - s(18), y), "topright")
         gfx.blit_text(surf, "cond", 17, "Changing the music plays it so you can listen", (130, 134, 142),
-                      (gfx.W / 2 + s(270), s(520)), "center")
+                      (gfx.W / 2 + s(270), s(660)), "center")
         self.back_btn.draw(surf, mouse, pygame.mouse.get_pressed()[0])
 
 

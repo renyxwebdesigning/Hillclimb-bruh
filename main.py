@@ -52,7 +52,15 @@ BOOST_KEYS = (pygame.K_SPACE, pygame.K_LSHIFT, pygame.K_RSHIFT)
 
 def window_size():
     if WEB:
-        return 1024, 576            # fewer pixels keeps phones smooth; the page scales it up
+        # 576 px tall keeps phones smooth (the page scales it up); the width follows the
+        # browser's shape so the game fills the whole screen. Narrower than 16:9 gets bars.
+        try:
+            import platform as browser
+            ratio = browser.window.innerWidth / browser.window.innerHeight
+        except Exception:
+            ratio = 16 / 9
+        ratio = min(max(ratio, 16 / 9), 2.4)
+        return int(576 * ratio) // 2 * 2, 576
     try:
         dw, dh = pygame.display.get_desktop_sizes()[0]
     except (pygame.error, IndexError):
@@ -73,6 +81,16 @@ class App:
             pass
         self.window = pygame.display.set_mode((w, h))
         pygame.display.set_caption(TITLE)
+        if WEB:
+            # pygbag shows the canvas at half the page width until main.py returns, which a
+            # game never does: switch to full size now, on a black page.
+            try:
+                import platform as browser
+                browser.window.config.gui_divider = 1
+                browser.document.body.style.background = "#000"
+                browser.window.window_resize()
+            except Exception:
+                pass
         self.screen = gfx.init(w, h)            # opaque canvas; copied to the window each frame
         try:
             if not WEB and not hasattr(pygame.scrap, "get_text"):      # old pygame needs scrap.init()
