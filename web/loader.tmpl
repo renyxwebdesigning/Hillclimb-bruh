@@ -690,7 +690,7 @@ function show_infobox() {
                        "wss://test.mosquitto.org:8081"];
         var enc = new TextEncoder(), dec = new TextDecoder();
         var M = { ws: null, ok: false, inbox: [], subs: {}, id: "", will: null, idx: 0, timer: null, stop: false,
-                  mid: 1, host: "", backoff: 1000 };
+                  mid: 1, host: "", backoff: 1000, stick: 0 };
 
         function varint(n) { var o = []; do { var b = n % 128; n = Math.floor(n / 128); o.push(b | (n ? 128 : 0)); } while (n); return o; }
         function str(s) { var b = Array.from(enc.encode(s)); return [b.length >> 8, b.length & 255].concat(b); }
@@ -717,7 +717,7 @@ function show_infobox() {
                     flags |= 0x04 | (M.will[2] ? 0x20 : 0);
                     payload = payload.concat(str(M.will[0]), str(M.will[1]));
                 }
-                send(pkt(0x10, str("MQTT").concat([4, flags, 0, 30], payload)));
+                send(pkt(0x10, str("MQTT").concat([4, flags, 0, 60], payload)));       // keepalive 60 s
             };
             ws.onmessage = function (e) {
                 buf = buf.concat(Array.from(new Uint8Array(e.data)));
@@ -733,7 +733,8 @@ function show_infobox() {
                     var type = head >> 4;
                     if (type === 2) {                                   // CONNACK
                         if (body[1] !== 0) { ws.close(); return; }
-                        M.ok = true; M.host = url; M.backoff = 1000;
+                        // reconnect to this same broker next time: the other players are here
+                        M.ok = true; M.host = url; M.backoff = 1000; M.idx = BROKERS.indexOf(url);
                         Object.keys(M.subs).forEach(sub);
                         if (M.timer) clearInterval(M.timer);
                         M.timer = setInterval(function () { send([0xc0, 0]); }, 15000);
@@ -746,7 +747,13 @@ function show_infobox() {
                     }
                 }
             };
-            ws.onclose = function () { if (M.ws === ws) { M.ok = false; M.ws = null; retry(); } };
+            ws.onclose = function () {
+                if (M.ws !== ws) return;
+                // a broker that worked before gets a few tries before we move on to the next one
+                if (M.ok) { M.idx = BROKERS.indexOf(url); M.stick = 3; }
+                else if (M.stick > 0) { M.stick--; M.idx = BROKERS.indexOf(url); }
+                M.ok = false; M.ws = null; retry();
+            };
             ws.onerror = function () { try { ws.close(); } catch (e) {} };
         }
         function retry() {
@@ -754,6 +761,10 @@ function show_infobox() {
             M.backoff = Math.min(10000, M.backoff * 1.6);
             setTimeout(connect, M.backoff);
         }
+
+        document.addEventListener("visibilitychange", function () {
+            if (document.visibilityState === "visible" && !M.ok && !M.stop && !M.ws) { M.backoff = 1000; connect(); }
+        });
 
         window.hr_mq_connect = function (id, wt, wp, wr) {
             M.id = id; M.will = wt ? [wt, wp, !!wr] : null; M.stop = false; connect(); return 1;

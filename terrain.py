@@ -57,8 +57,11 @@ class Terrain:
             while c < LENGTH:
                 w = rng.uniform(4.0, 9.0)
                 depth = rng.uniform(0.8, 2.0) * (0.5 + float(_smoothstep(60, 1500, np.array(c))))
-                h += -depth * np.exp(-((xs - c) / (0.45 * w)) ** 2)
-                h += 0.4 * depth * np.exp(-((np.abs(xs - c) - 0.75 * w) / (0.22 * w)) ** 2)
+                # only the crater's own neighbourhood: further out both terms are exactly 0 anyway
+                lo, hi = max(0, int((c - 5 * w - START) / RES)), min(n, int((c + 5 * w - START) / RES) + 1)
+                x = xs[lo:hi]
+                h[lo:hi] += -depth * np.exp(-((x - c) / (0.45 * w)) ** 2)
+                h[lo:hi] += 0.4 * depth * np.exp(-((np.abs(x - c) - 0.75 * w) / (0.22 * w)) ** 2)
                 c += rng.uniform(35, 90)
 
         self.n = n

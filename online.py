@@ -174,7 +174,7 @@ class Session:
                 pass
         for car in self.remote.values():
             car.update(dt)
-        if not self.welcomed and not self.error and time.monotonic() - self._join_started > 10:
+        if not self.welcomed and not self.error and time.monotonic() - self._join_started > 25:
             self.error = (f"Player #{self.room} is not hosting a game right now." if self.room
                           else "The host did not answer.")
         if self.is_host and self.phase == "race" and self.results is None and self.finish:

@@ -24,7 +24,9 @@ import time
 
 BROKERS = [("broker.hivemq.com", 1883), ("broker.emqx.io", 1883), ("test.mosquitto.org", 1883)]
 PREFIX = "hr-rnx/v2"
-KEEPALIVE = 30
+KEEPALIVE = 60             # phones throttle timers in the background; give the broker more slack
+TIMEOUT = 25.0             # seconds of silence before a room counts the other side as gone
+STALL = 1.5                # a gap this long between our own polls means *we* were frozen, not them
 
 
 def _varint(n):
@@ -373,8 +375,6 @@ class OfflineRelay:
 class RoomHost:
     """Same interface as net.Host, but over the relay. Client ids are player numbers."""
 
-    TIMEOUT = 9.0
-
     def __init__(self, relay):
         self.relay = relay
         self.room = relay.number
@@ -382,6 +382,7 @@ class RoomHost:
         self.queue = []
         self.seen = {}
         self._ping_t = 0.0
+        self._last_poll = time.monotonic()
         relay.add_room_handler(self.base + "/h", self._on)
         relay.mqtt.subscribe(self.base + "/h")
 
@@ -414,13 +415,18 @@ class RoomHost:
         self.seen.pop(cid, None)
 
     def poll(self):
-        self.relay.update()
         now = time.monotonic()
+        if now - self._last_poll > STALL:
+            # we were frozen (loading a map, phone screen off): that silence was ours, not the players'
+            for cid in self.seen:
+                self.seen[cid] = now
+        self._last_poll = now
+        self.relay.update()
         if now > self._ping_t:
             self._ping_t = now + 2.0
             self._pub({"t": "ping"})
         for cid, t in list(self.seen.items()):
-            if now - t > self.TIMEOUT:
+            if now - t > TIMEOUT:
                 del self.seen[cid]
                 self.queue.append((cid, {"t": "_closed"}))
         out, self.queue = self.queue, []
@@ -435,14 +441,12 @@ class RoomHost:
 class RoomClient:
     """Same interface as net.Client, over the relay."""
 
-    TIMEOUT = 9.0
-
     def __init__(self, relay, room):
         self.relay = relay
         self.me = int(relay.number)
         self.base = f"{PREFIX}/r/{room}"
         self.queue = []
-        self.last = time.monotonic()
+        self.last = self._last_poll = time.monotonic()
         self._ping_t = 0.0
         self.closed = False
         relay.add_room_handler(self.base + "/a", self._on)
@@ -462,12 +466,15 @@ class RoomClient:
         self.relay.mqtt.publish(self.base + "/h", json.dumps(msg, separators=(",", ":")).encode())
 
     def poll(self):
-        self.relay.update()
         now = time.monotonic()
+        if now - self._last_poll > STALL:
+            self.last = now                 # we were frozen, the host wasn't silent
+        self._last_poll = now
+        self.relay.update()
         if now > self._ping_t:
             self._ping_t = now + 2.0
             self.send({"t": "ping"})
-        if not self.closed and now - self.last > self.TIMEOUT:
+        if not self.closed and now - self.last > TIMEOUT:
             self.closed = True
             self.queue.append((0, {"t": "_closed"}))
         out, self.queue = self.queue, []
