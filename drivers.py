@@ -1,44 +1,39 @@
-"""Selectable drivers: cartoon caricatures (and one photo face).
+"""Selectable drivers: cartoon caricatures.
 
 Each driver has a head drawer, a voice for espeak and a few lines they
 shout when the engine seizes ("Kolbenklemmer").
 """
 import math
-import os
 
 import pygame
 
 import gfx
 
-ASSETS = os.path.join(getattr(__import__("sys"), "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "assets")
-
 DRIVERS = [
     dict(key="default", name="Racer", voice=("de", 50, 165),
          lines=["Verdammt nochmal!", "So ein Mist!", "Nicht schon wieder!"]),
-    dict(key="trump", name="Donald Trump", voice=("en-us", 32, 150),
+    dict(key="trump", name="Tromald Dump", voice=("en-us", 32, 150),
          lines=["Total disaster! Sad!", "This engine is fake news!", "Terrible, terrible engine!"]),
-    dict(key="putin", name="Putin", voice=("de", 22, 135),
+    dict(key="putin", name="Plad Vutin", voice=("de", 22, 135),
          lines=["Bljin!", "Tschort wasmi!", "Njet, njet, njet!"]),
-    dict(key="bonnie", name="Bonnie Blue", voice=("en-us+f3", 70, 165),
+    dict(key="bonnie", name="Bunny Blue", voice=("en-us+f3", 70, 165),
          lines=["Oh bloody hell!", "Are you kidding me?!", "Oh, for crying out loud!"]),
-    dict(key="mozart", name="Mozart", voice=("de", 62, 180),
+    dict(key="mozart", name="Zotmard", voice=("de", 62, 180),
          lines=["Sapperlot!", "Potz Blitz und Donnerwetter!", "Himmel, Arsch und Zwirn!"]),
-    dict(key="einstein", name="Einstein", voice=("de", 45, 130),
+    dict(key="einstein", name="Zweistein", voice=("de", 45, 130),
          lines=["Relativ kaputt!", "Gott würfelt doch!", "Donnerwetter!"]),
-    dict(key="roesti", name="Albert Rösti", voice=("de", 46, 160),
+    dict(key="roesti", name="Rollbert Rösti", voice=("de", 46, 160),
          lines=["Gopferdammi!", "Huere Seich!", "Das isch jetzt nöd wahr!"]),
-    dict(key="blocher", name="Christoph Blocher", voice=("de", 34, 145),
+    dict(key="blocher", name="Bristoph Chocher", voice=("de", 34, 145),
          lines=["Gopfertami nomal!", "Huere Chaib!", "So en Seich!"]),
-    dict(key="maurer", name="Ueli Maurer", voice=("de", 40, 150),
+    dict(key="maurer", name="Ulimuli", voice=("de", 40, 150),
          lines=["Kä Luscht!", "Gopferdeckel!", "Huere Mischt!"]),
-    dict(key="greta", name="Greta Thunberg", voice=("en-us+f2", 66, 160),
+    dict(key="greta", name="Töra Brummberg", voice=("en-us+f2", 66, 160),
          lines=["How dare you, engine!", "You have stolen my horsepower!", "Blah, blah, blah!"]),
-    dict(key="arnold", name="Arnold Schwarzenegger", voice=("en-us", 18, 135),
+    dict(key="arnold", name="Arni Blacknger", voice=("en-us", 18, 135),
          lines=["I'll be back!", "Hasta la vista, engine!", "Get to the choppa!"]),
-    dict(key="federer", name="Roger Federer", voice=("de", 52, 160),
+    dict(key="federer", name="Fodger Rederer", voice=("de", 52, 160),
          lines=["Come on!", "Oh nei, das isch jetzt blöd!", "Hopp Schwiiz!"]),
-    dict(key="lutz", name="Lutz Wittenberg", voice=("de", 44, 155),
-         lines=["Gopferdammi nomal!", "Ja Sapperlot!", "Das darf doch nöd wahr si!"]),
 ]
 DRIVER_BY_KEY = {d["key"]: d for d in DRIVERS}
 
@@ -48,12 +43,10 @@ SIZE = 1.95          # sprite half-size in head radii (hair and collar stick out
 
 def face(key, radius_px):
     """A head sprite for the driver; the head centre is the sprite centre."""
-    if key == "lutz":
-        return _photo(radius_px)
     size = radius_px * 2 * SIZE
 
     def draw(surf, k):
-        DRAW[key](Painter(surf, radius_px * k))
+        DRAW.get(key, _default)(Painter(surf, radius_px * k))
     return gfx.supersample(size, size, draw)
 
 
@@ -625,23 +618,3 @@ DRAW = {"default": _default, "trump": _trump, "putin": _putin, "bonnie": _bonnie
         "einstein": _einstein, "roesti": _roesti, "blocher": _blocher, "maurer": _maurer, "greta": _greta,
         "arnold": _arnold, "federer": _federer}
 
-
-def _photo(radius_px):
-    path = os.path.join(ASSETS, "lutz_photo.png")
-    try:
-        img = pygame.image.load(path).convert_alpha()
-    except (pygame.error, FileNotFoundError):
-        return face("default", radius_px)
-    crop = img.subsurface(pygame.Rect(10, 8, 164, 228)).copy()
-    w, h = int(radius_px * 2 * 0.86), int(radius_px * 2 * 1.2)
-    crop = pygame.transform.smoothscale(crop, (w, h))
-    mask = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.ellipse(mask, (255, 255, 255, 255), mask.get_rect())
-    crop.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-    size = int(radius_px * 2 * 1.75)
-    out = pygame.Surface((size, size), pygame.SRCALPHA)
-    ring = pygame.Rect(0, 0, w + 4, h + 4)
-    ring.center = (size / 2, size / 2)
-    pygame.draw.ellipse(out, (40, 26, 22), ring)
-    out.blit(crop, crop.get_rect(center=(size / 2, size / 2)))
-    return out

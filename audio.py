@@ -294,6 +294,7 @@ class Voices:
     def say(self, key, index=None):
         """Pick a line for the driver; returns (text, Sound or None, index)."""
         d = next((d for d in DRIVERS if d["key"] == key), DRIVERS[0])
+        key = d["key"]
         i = random.randrange(len(d["lines"])) if index is None else index % len(d["lines"])
         snd = self.sounds.get((key, i))
         if snd is None:

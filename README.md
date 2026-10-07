@@ -54,7 +54,7 @@ The on-screen pedals, boost and horn buttons also work with the mouse.
 
 - 8 maps: Countryside, Desert, Arctic, Moon, City, Volcano (jump the lava pits!), Jungle and Mars. Most have a day/night cycle with headlights and street lamps.
 - 9 vehicles: Jeep, Dirt Bike, Chopper, Monster Truck, Supercar, Rocket, Tank, Police Car (siren!) and Hoverboard, each with its own upgrades (engine, suspension, tires, boost).
-- 13 drivers to choose from, each with their own voice.
+- 12 drivers to choose from, each with their own voice.
 - Bridges, tunnels, coins, air-time and flip bonuses, 40 secret trophies and 16 achievements (Trophy Room).
 - Daily challenge, ghost of your best run, world leaderboard, online races and 4-race tournaments.
 - Random engine seizures: black smoke, a swearing driver, and 5-30 hits of Enter to fix.
