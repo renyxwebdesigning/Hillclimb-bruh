@@ -293,6 +293,193 @@ def vehicle_on_scene(app, stage, spec, w, h, fit=0.62, levels=None):
 
 
 # ------------------------------------------------------------------ screens
+class Setup:
+    """One screen for the next round: map, vehicle and driver side by side, then START."""
+    ROWS = ("stage", "vehicle", "driver")
+    TITLES = {"stage": "MAP", "vehicle": "VEHICLE", "driver": "DRIVER"}
+    STAGE_INFO = {"countryside": "Rolling hills · day & night", "desert": "Huge dunes · day & night",
+                  "arctic": "Slippery ice · day & night", "moon": "Low gravity", "city": "Skyscrapers · night lights",
+                  "volcano": "Jump the lava pits!", "jungle": "Rain, rivers & palms", "mars": "Red dust · very low gravity"}
+
+    def __init__(self, app):
+        self.app = app
+        self.bg = background(gfx.W, gfx.H)
+        margin = s(40)
+        self.hero_rect = pygame.Rect(margin, s(78), gfx.W - 2 * margin, s(236))
+        gap = s(20)
+        pw = min(s(400), (gfx.W - 2 * margin - 2 * gap) / 3)
+        x0 = gfx.W / 2 - (3 * pw + 2 * gap) / 2
+        self.panels = {}
+        for i, row in enumerate(self.ROWS):
+            r = pygame.Rect(x0 + i * (pw + gap), s(330), pw, s(246))
+            thumb = pygame.Rect(0, 0, r.w - s(150), s(126))
+            thumb.midtop = (r.centerx, r.y + s(42))
+            left = pygame.Rect(r.x + s(12), thumb.y + s(14), s(58), s(98))
+            right = pygame.Rect(r.right - s(70), thumb.y + s(14), s(58), s(98))
+            self.panels[row] = dict(rect=r, thumb=thumb, left=left, right=right)
+        self.focus = 0
+        self.home_btn = Button("HOME", (s(150), gfx.H - s(56)), (210, 64), "gray")
+        self.garage_btn = Button("UPGRADES", (gfx.W / 2, gfx.H - s(56)), (270, 64), "blue")
+        self.start_btn = Button("START", (gfx.W - s(176), gfx.H - s(56)), (270, 70), "green", icon=checker_icon(s(34)))
+        self.cache = {}
+
+    # ----------------------------------------------------------- choices
+    def options(self, row):
+        return {"stage": STAGES, "vehicle": VEHICLES, "driver": DRIVERS}[row]
+
+    def current(self, row):
+        key = self.app.data[row]
+        opts = self.options(row)
+        return next((i for i, o in enumerate(opts) if o["key"] == key), 0)
+
+    def step(self, row, d):
+        app = self.app
+        opts = self.options(row)
+        o = opts[(self.current(row) + d) % len(opts)]
+        app.data[row] = o["key"]
+        app.persist()
+        app.audio.play("click")
+        if row == "driver":
+            app.audio.say(o["key"])
+
+    # ------------------------------------------------------------ images
+    def _cached(self, key, make):
+        if key not in self.cache:
+            if len(self.cache) > 60:
+                self.cache.clear()
+            self.cache[key] = make()
+        return self.cache[key]
+
+    def hero(self):
+        app, r = self.app, self.hero_rect
+        return self._cached(("hero", app.data["stage"], app.data["vehicle"], app.data["driver"]),
+                            lambda: vehicle_on_scene(app, app.stage, app.vehicle, r.w, r.h, 0.82,
+                                                     app.data["levels"][app.data["vehicle"]]))
+
+    def thumb(self, row):
+        app, t = self.app, self.panels[row]["thumb"]
+        if row == "stage":
+            return self._cached(("st", app.data["stage"]), lambda: scene(app.stage, t.w, t.h)[0])
+        if row == "vehicle":
+            return self._cached(("veh", app.data["vehicle"], app.data["stage"], app.data["driver"]),
+                                lambda: vehicle_on_scene(app, app.stage, app.vehicle, t.w, t.h, 0.8))
+        key = app.data["driver"]
+
+        def face_card():
+            card = pygame.Surface(t.size, pygame.SRCALPHA)
+            pygame.draw.rect(card, (70, 140, 210), card.get_rect(), border_top_left_radius=si(12),
+                             border_top_right_radius=si(12))
+            pygame.draw.rect(card, (110, 176, 236), (0, 0, t.w, t.h // 2), border_top_left_radius=si(12),
+                             border_top_right_radius=si(12))
+            img = vehicle_head_preview(app, s(44)) if key == "default" else face_img(key, s(44))
+            card.blit(img, img.get_rect(center=(t.w / 2, t.h / 2 + s(14))))
+            return card
+        return self._cached(("drv", key, app.data["vehicle"]), face_card)
+
+    # ------------------------------------------------------------ events
+    def handle(self, ev):
+        app = self.app
+        if ev.type == pygame.KEYDOWN:
+            row = self.ROWS[self.focus]
+            if ev.key in (pygame.K_UP, pygame.K_w):
+                self.focus = (self.focus - 1) % 3
+            elif ev.key in (pygame.K_DOWN, pygame.K_s, pygame.K_TAB):
+                self.focus = (self.focus + 1) % 3
+            elif ev.key in (pygame.K_LEFT, pygame.K_a):
+                self.step(row, -1)
+            elif ev.key in (pygame.K_RIGHT, pygame.K_d):
+                self.step(row, 1)
+            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
+                app.start_run()
+            elif ev.key == pygame.K_g:
+                app.goto("garage")
+            elif ev.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                app.goto("home")
+        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            if toggles_hit(app, ev.pos):
+                return
+            if self.start_btn.hit(ev.pos):
+                app.start_run()
+                return
+            if self.home_btn.hit(ev.pos):
+                app.audio.play("click")
+                app.goto("home")
+                return
+            if self.garage_btn.hit(ev.pos):
+                app.audio.play("click")
+                app.goto("garage")
+                return
+            for i, row in enumerate(self.ROWS):
+                pn = self.panels[row]
+                if pn["left"].inflate(s(10), s(10)).collidepoint(ev.pos):
+                    self.focus = i
+                    self.step(row, -1)
+                elif pn["right"].inflate(s(10), s(10)).collidepoint(ev.pos):
+                    self.focus = i
+                    self.step(row, 1)
+                elif pn["rect"].collidepoint(ev.pos):
+                    self.focus = i
+                    app.audio.play("click")
+                    app.goto({"stage": "stages", "vehicle": "vehicles", "driver": "drivers"}[row])
+
+    # -------------------------------------------------------------- draw
+    def _arrow(self, surf, r, d, hover):
+        pygame.draw.rect(surf, (66, 70, 78) if hover else (50, 53, 60), r, border_radius=si(12))
+        cx, cy, k = r.centerx, r.centery, s(16)
+        pts = [(cx - d * k * 0.6, cy - k), (cx + d * k * 0.7, cy), (cx - d * k * 0.6, cy + k)]
+        pygame.draw.polygon(surf, GOLD, pts)
+
+    def draw(self, surf, mouse, now):
+        app = self.app
+        surf.blit(self.bg, (0, 0))
+        top_bar(surf, app, "READY TO RACE")
+        hr = self.hero_rect
+        pygame.draw.rect(surf, (14, 16, 20), hr.inflate(s(8), s(8)), border_radius=si(18))
+        surf.blit(self.hero(), hr.topleft)
+        best = app.data["best"].get(app.data["stage"], 0)
+        label = f"{app.stage['name'].upper()}  ·  {app.vehicle['name'].upper()}"
+        tag = gfx.text("black_i", 30, label, WHITE, outline=INK, width=3)
+        surf.blit(tag, tag.get_rect(topleft=(hr.x + s(20), hr.y + s(14))))
+        if best:
+            gfx.blit_text(surf, "cond", 20, f"BEST {best} m", GOLD, (hr.x + s(22), hr.y + s(56)), outline=INK, width=2)
+        for i, row in enumerate(self.ROWS):
+            pn = self.panels[row]
+            r = pn["rect"]
+            focused = i == self.focus
+            pygame.draw.rect(surf, GOLD if focused else (70, 74, 82), r.inflate(s(8), s(8)), border_radius=si(18))
+            pygame.draw.rect(surf, (32, 34, 40), r, border_radius=si(14))
+            opts = self.options(row)
+            idx = self.current(row)
+            gfx.blit_text(surf, "cond", 18, self.TITLES[row], GOLD if focused else MUTED, (r.x + s(18), r.y + s(12)))
+            gfx.blit_text(surf, "cond", 16, f"{idx + 1} / {len(opts)}", MUTED, (r.right - s(18), r.y + s(13)), "topright")
+            t = pn["thumb"]
+            hover = r.collidepoint(mouse) and not (pn["left"].collidepoint(mouse) or pn["right"].collidepoint(mouse))
+            if hover:
+                pygame.draw.rect(surf, (140, 146, 156), t.inflate(s(6), s(6)), border_radius=si(14))
+            surf.blit(self.thumb(row), t.topleft)
+            self._arrow(surf, pn["left"], -1, pn["left"].collidepoint(mouse))
+            self._arrow(surf, pn["right"], 1, pn["right"].collidepoint(mouse))
+            o = opts[idx]
+            name = gfx.text("cond", 26, o["name"].upper(), WHITE)
+            if name.get_width() > r.w - s(24):
+                name = pygame.transform.smoothscale_by(name, (r.w - s(24)) / name.get_width())
+            surf.blit(name, name.get_rect(center=(r.centerx, t.bottom + s(26))))
+            if row == "stage":
+                sub = self.STAGE_INFO.get(o["key"], "")
+            elif row == "vehicle":
+                sub = o["tagline"]
+            else:
+                sub = "Tap the picture to see everyone" if app.hud.touch_mode else "Click the picture to see everyone"
+            sub_img = gfx.text("cond_i", 16, sub, (130, 200, 255))
+            if sub_img.get_width() > r.w - s(24):
+                sub_img = pygame.transform.smoothscale_by(sub_img, (r.w - s(24)) / sub_img.get_width())
+            surf.blit(sub_img, sub_img.get_rect(center=(r.centerx, t.bottom + s(56))))
+        pressed = pygame.mouse.get_pressed()[0]
+        self.home_btn.draw(surf, mouse, pressed)
+        self.garage_btn.draw(surf, mouse, pressed)
+        self.start_btn.draw(surf, mouse, pressed)
+
+
 class StageSelect:
     CARD_W, CARD_H, PREVIEW_H = 270, 222, 142
 
@@ -304,8 +491,8 @@ class StageSelect:
         self.rects = [pygame.Rect(x0 + s((i % cols) * (self.CARD_W + gap)), s(92 + (i // cols) * (self.CARD_H + 20)),
                                   s(self.CARD_W), s(self.CARD_H)) for i in range(len(STAGES))]
         self.previews = {}
-        self.next_btn = Button("NEXT", (gfx.W - s(170), gfx.H - s(62)), (250, 66), "green")
-        self.quit_btn = Button("HOME", (s(170), gfx.H - s(62)), (220, 66), "gray")
+        self.next_btn = Button("DONE", (gfx.W - s(170), gfx.H - s(62)), (250, 66), "green")
+        self.quit_btn = Button("BACK", (s(170), gfx.H - s(62)), (220, 66), "gray")
         self.online_btn = Button("PLAY ONLINE", (gfx.W / 2, gfx.H - s(62)), (300, 66), "blue")
 
     def preview(self, st, r):
@@ -323,29 +510,24 @@ class StageSelect:
                      pygame.K_DOWN: 4, pygame.K_s: 4, pygame.K_UP: -4, pygame.K_w: -4}
             if ev.key in moves:
                 self.select(STAGES[max(0, min(len(STAGES) - 1, i + moves[ev.key]))])
-            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
-                app.goto("vehicles")
+            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
+                app.goto("setup")
             elif ev.key == pygame.K_o:
                 app.goto("online")
-            elif ev.key == pygame.K_ESCAPE:
-                app.goto("home")
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if toggles_hit(app, ev.pos):
                 return
-            if self.next_btn.hit(ev.pos):
+            if self.next_btn.hit(ev.pos) or self.quit_btn.hit(ev.pos):
                 app.audio.play("click")
-                app.goto("vehicles")
+                app.goto("setup")
             elif self.online_btn.hit(ev.pos):
                 app.audio.play("click")
                 app.goto("online")
-            elif self.quit_btn.hit(ev.pos):
-                app.audio.play("click")
-                app.goto("home")
             for st, r in zip(STAGES, self.rects):
                 if r.collidepoint(ev.pos):
                     if app.data["stage"] == st["key"]:
                         app.audio.play("click")
-                        app.goto("vehicles")
+                        app.goto("setup")
                     else:
                         self.select(st)
 
@@ -382,7 +564,7 @@ class StageSelect:
                      "jungle": "Rain, rivers & palms", "mars": "Red dust · very low gravity"}.get(
                 st["key"], "Rolling hills · day & night")
             gfx.blit_text(surf, "cond_i", 16, extra, (130, 200, 255), (r.x + s(14), r.y + ph + s(46)))
-        gfx.blit_text(surf, "cond", 18, "Click a stage or use the arrow keys  ·  Enter to continue",
+        gfx.blit_text(surf, "cond", 18, "Pick a map  ·  tap it again (or press Enter) when you're done",
                       (130, 134, 142), (gfx.W / 2, s(580)), "center")
         pressed = pygame.mouse.get_pressed()[0]
         self.next_btn.draw(surf, mouse, pressed)
@@ -404,8 +586,8 @@ class VehicleSelect:
             self.rects.append(pygame.Rect(x0 + s(col * (self.CARD_W + gap)), s(84 + row * (self.CARD_H + 14)),
                                           s(self.CARD_W), s(self.CARD_H)))
         self.previews = {}
-        self.back_btn = Button("STAGE", (s(170), gfx.H - s(56)), (230, 64), "gray")
-        self.next_btn = Button("DRIVER", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green")
+        self.back_btn = Button("BACK", (s(170), gfx.H - s(56)), (230, 64), "gray")
+        self.next_btn = Button("DONE", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green")
 
     def preview(self, spec, r):
         key = (spec["key"], self.app.data["stage"], self.app.data["driver"])
@@ -428,24 +610,19 @@ class VehicleSelect:
                      pygame.K_DOWN: 3, pygame.K_s: 3, pygame.K_UP: -3, pygame.K_w: -3}
             if ev.key in moves:
                 self.select(VEHICLES[max(0, min(len(VEHICLES) - 1, i + moves[ev.key]))])
-            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
-                app.goto("drivers")
-            elif ev.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
-                app.goto("stages")
+            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                app.goto("setup")
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if toggles_hit(app, ev.pos):
                 return
-            if self.next_btn.hit(ev.pos):
+            if self.next_btn.hit(ev.pos) or self.back_btn.hit(ev.pos):
                 app.audio.play("click")
-                app.goto("drivers")
-            elif self.back_btn.hit(ev.pos):
-                app.audio.play("click")
-                app.goto("stages")
+                app.goto("setup")
             for spec, r in zip(VEHICLES, self.rects):
                 if r.collidepoint(ev.pos):
                     if app.data["vehicle"] == spec["key"]:
                         app.audio.play("click")
-                        app.goto("drivers")
+                        app.goto("setup")
                     else:
                         self.select(spec)
 
@@ -484,7 +661,7 @@ class VehicleSelect:
                 fill = bar.copy()
                 fill.w = max(si(4), int(bar.w * val))
                 pygame.draw.rect(surf, gfx.mix((90, 200, 60), (255, 190, 40), 1 - val), fill, border_radius=si(4))
-        gfx.blit_text(surf, "cond", 18, "Every vehicle is free  ·  Arrow keys or click  ·  Enter to pick a driver",
+        gfx.blit_text(surf, "cond", 18, "Every vehicle is free  ·  tap it again (or press Enter) when you're done",
                       (130, 134, 142), (gfx.W / 2, s(608)), "center")
         pressed = pygame.mouse.get_pressed()[0]
         self.back_btn.draw(surf, mouse, pressed)
@@ -505,8 +682,8 @@ class DriverSelect:
             self.rects.append(pygame.Rect(x0 + s(col * (self.CARD_W + gap)), s(96 + row * (self.CARD_H + gap)),
                                           s(self.CARD_W), s(self.CARD_H)))
         self.faces = {}
-        self.back_btn = Button("VEHICLE", (s(170), gfx.H - s(56)), (230, 64), "gray")
-        self.next_btn = Button("GARAGE", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green")
+        self.back_btn = Button("BACK", (s(170), gfx.H - s(56)), (230, 64), "gray")
+        self.next_btn = Button("DONE", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green")
 
     def face(self, d):
         if d["key"] not in self.faces:
@@ -533,24 +710,19 @@ class DriverSelect:
                      pygame.K_DOWN: 7, pygame.K_s: 7, pygame.K_UP: -7, pygame.K_w: -7}
             if ev.key in moves:
                 self.select(DRIVERS[max(0, min(len(DRIVERS) - 1, i + moves[ev.key]))])
-            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
-                app.goto("garage")
-            elif ev.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
-                app.goto("vehicles")
+            elif ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                app.goto("setup")
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if toggles_hit(app, ev.pos):
                 return
-            if self.next_btn.hit(ev.pos):
+            if self.next_btn.hit(ev.pos) or self.back_btn.hit(ev.pos):
                 app.audio.play("click")
-                app.goto("garage")
-            elif self.back_btn.hit(ev.pos):
-                app.audio.play("click")
-                app.goto("vehicles")
+                app.goto("setup")
             for d, r in zip(DRIVERS, self.rects):
                 if r.collidepoint(ev.pos):
                     if app.data["driver"] == d["key"]:
                         app.audio.play("click")
-                        app.goto("garage")
+                        app.goto("setup")
                     else:
                         self.select(d)
 
@@ -610,7 +782,7 @@ class Garage:
                       for i, u in enumerate(UPGRADES)]
         self.tile_img = gfx.rounded(s(self.TW), s(self.TH), s(14), (226, 228, 232), top=(255, 255, 255))
         self.tile_hover = gfx.rounded(s(self.TW), s(self.TH), s(14), (240, 242, 246), top=(255, 255, 255))
-        self.back_btn = Button("DRIVER", (s(170), gfx.H - s(56)), (230, 64), "gray")
+        self.back_btn = Button("BACK", (s(170), gfx.H - s(56)), (230, 64), "gray")
         self.start_btn = Button("START", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green",
                                 icon=checker_icon(s(34)))
         self.horn_btns = {k: Button(f"HORN: {k.upper()}", (gfx.W / 2, gfx.H - s(56)), (290, 64), "blue")
@@ -625,7 +797,7 @@ class Garage:
             if ev.key in (pygame.K_RETURN, pygame.K_SPACE):
                 app.start_run()
             elif ev.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
-                app.goto("drivers")
+                app.goto("setup")
             elif pygame.K_1 <= ev.key <= pygame.K_4:
                 self.buy(UPGRADES[ev.key - pygame.K_1])
             elif ev.key == pygame.K_h:
@@ -637,7 +809,7 @@ class Garage:
                 app.start_run()
             elif self.back_btn.hit(ev.pos):
                 app.audio.play("click")
-                app.goto("drivers")
+                app.goto("setup")
             elif self.horn_btns["puppy"].hit(ev.pos):
                 self.toggle_horn()
             for u, r in self.tiles:
@@ -738,7 +910,7 @@ class Results:
         self.frozen.blit(dim, (0, 0))
         cy = gfx.H - s(84)
         self.retry = Button("RETRY", (gfx.W / 2 + s(150), cy), (250, 66), "green", key="retry")
-        self.garage = Button("GARAGE", (gfx.W / 2 - s(150), cy), (250, 66), "gray", key="garage")
+        self.garage = Button("CHANGE RIDE", (gfx.W / 2 - s(150), cy), (250, 66), "gray", key="setup")
         self.panel = gfx.rounded(s(560), s(286), s(18), (30, 32, 36), border=(80, 84, 92), border_w=2,
                                  top=(52, 55, 60))
 
@@ -748,13 +920,13 @@ class Results:
             if ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_r):
                 app.start_run()
             elif ev.key in (pygame.K_ESCAPE, pygame.K_g):
-                app.goto("garage")
+                app.goto("setup")
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if self.retry.hit(ev.pos):
                 app.start_run()
             elif self.garage.hit(ev.pos):
                 app.audio.play("click")
-                app.goto("garage")
+                app.goto("setup")
 
     def draw(self, surf, mouse, now, dt):
         self.t += dt
@@ -791,7 +963,7 @@ class Results:
         self.garage.draw(surf, mouse, pressed)
         self.retry.draw(surf, mouse, pressed)
         if not self.app.hud.touch_mode:
-            gfx.blit_text(surf, "cond", 18, "Enter / R to retry  ·  Esc for garage", (170, 174, 182),
+            gfx.blit_text(surf, "cond", 18, "Enter / R to retry  ·  Esc to change map, vehicle or driver", (170, 174, 182),
                           (gfx.W / 2, gfx.H - s(30)), "center")
 
 
@@ -802,7 +974,7 @@ class PauseMenu:
         if online is None:
             self.buttons = [Button("RESUME", (cx, cy - s(10)), (300, 66), "green", key="resume"),
                             Button("RESTART", (cx, cy + s(76)), (300, 66), "gray", key="restart"),
-                            Button("GARAGE", (cx, cy + s(162)), (300, 66), "gray", key="garage")]
+                            Button("CHANGE RIDE", (cx, cy + s(162)), (300, 66), "gray", key="setup")]
         else:
             self.buttons = [Button("RESUME", (cx, cy - s(10)), (300, 66), "green", key="resume")]
             if online.is_host:

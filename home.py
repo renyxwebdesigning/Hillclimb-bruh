@@ -14,9 +14,8 @@ from gfx import s, si
 from render import CarView
 from ui import GOLD, INK, MUTED, WHITE, Button, toggles_hit
 
-ITEMS = [("PLAY", "stages"), ("PLAY ONLINE", "online"), ("VEHICLES", "vehicles"), ("DRIVERS", "drivers"),
-         ("GARAGE", "garage"), ("TROPHIES", "trophies"), ("LEADERBOARD", "leaderboard"), ("SETTINGS", "settings"),
-         ("QUIT", "quit")]
+ITEMS = [("PLAY", "setup"), ("PLAY ONLINE", "online"), ("GARAGE", "garage"), ("TROPHIES", "trophies"),
+         ("LEADERBOARD", "leaderboard"), ("SETTINGS", "settings"), ("QUIT", "quit")]
 
 
 class _Silent:
@@ -45,7 +44,7 @@ class HomeMenu:
     def __init__(self, app):
         self.app = app
         x = s(250)
-        self.buttons = [Button(label, (x, s(250) + i * s(51)), (330, 44), "green" if i == 0 else "gray", key=key)
+        self.buttons = [Button(label, (x, s(262) + i * s(60)), (330, 50), "green" if i == 0 else "gray", key=key)
                         for i, (label, key) in enumerate(ITEMS)]
         self.focus = 0
         self.panel = self._panel()
@@ -232,11 +231,14 @@ class HomeMenu:
         key = (app.data["driver"], app.data["vehicle"])
         if self.face_key != key:
             d = app.data["driver"]
-            self.face_img = face(d, s(22)) if d != "default" else None
+            self.face_img = face(d, s(19)) if d != "default" else None
             self.face_key = key
         y += s(44)
         if self.face_img:
-            surf.blit(self.face_img, self.face_img.get_rect(center=(x + s(24), y + s(12))))
+            clip = surf.get_clip()
+            surf.set_clip(card)
+            surf.blit(self.face_img, self.face_img.get_rect(center=(x + s(26), y + s(18))))
+            surf.set_clip(clip)
         name = DRIVER_BY_KEY.get(app.data["driver"], {"name": "Racer"})["name"]
         tx = x + (s(64) if self.face_img else 0)
         gfx.blit_text(surf, "cond", 20, VEHICLE_BY_KEY[app.data["vehicle"]]["name"].upper(), WHITE, (tx, y), "topleft")

@@ -139,6 +139,7 @@ class App:
                         "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
                         "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
         self.screens["home"] = home.HomeMenu(self)
+        self.screens["setup"] = ui.Setup(self)
         self.screens["settings"] = ui.Settings(self)
         self.screens["trophies"] = ui.TrophyRoom(self)
         self.screens["leaderboard"] = ui.Leaderboard(self)
@@ -437,7 +438,8 @@ class App:
         pygame.display.flip()
 
     # ------------------------------------------------------------ browser
-    SAFE_TO_RELAYOUT = ("home", "stages", "vehicles", "drivers", "garage", "settings", "trophies", "leaderboard")
+    SAFE_TO_RELAYOUT = ("home", "setup", "stages", "vehicles", "drivers", "garage", "settings", "trophies",
+                        "leaderboard")
 
     def _web_tick(self, dt):
         """Twice a second: follow fullscreen changes and re-fit the layout to the browser's shape."""
@@ -485,6 +487,7 @@ class App:
                         "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
                         "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
         self.screens["home"] = home.HomeMenu(self)
+        self.screens["setup"] = ui.Setup(self)
         self.screens["settings"] = ui.Settings(self)
         self.screens["trophies"] = ui.TrophyRoom(self)
         self.screens["leaderboard"] = ui.Leaderboard(self)
@@ -604,8 +607,8 @@ class App:
                     self.audio.engine_start(run.spec["sound"])
             elif act == "restart":
                 self.start_run()
-            elif act == "garage":
-                self.goto("garage")
+            elif act == "setup":
+                self.goto("setup")
             elif act == "lobby" and ses:
                 ses.back_to_lobby()
             elif act == "leave":
