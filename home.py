@@ -12,7 +12,7 @@ from drivers import DRIVER_BY_KEY, face
 from game import Run
 from gfx import s, si
 from render import CarView
-from ui import GOLD, INK, MUTED, WHITE, Button, toggles_hit
+from ui import GOLD, INK, MUTED, WHITE, Button, round_button, toggles_hit
 
 ITEMS = [("PLAY", "setup"), ("PLAY ONLINE", "online"), ("GARAGE", "garage"), ("TROPHIES", "trophies"),
          ("LEADERBOARD", "leaderboard"), ("SETTINGS", "settings"), ("QUIT", "quit")]
@@ -61,7 +61,7 @@ class HomeMenu:
         surf = pygame.Surface((w, gfx.H), pygame.SRCALPHA)
         for x in range(w):
             a = int(210 * (1 - x / w) ** 1.4)
-            pygame.draw.line(surf, (12, 14, 20, a), (x, 0), (x, gfx.H))
+            pygame.draw.line(surf, (8, 24, 64, a), (x, 0), (x, gfx.H))
         return surf
 
     # ---------------------------------------------------------------- demo
@@ -170,7 +170,7 @@ class HomeMenu:
         card = pygame.Rect(0, 0, s(360), s(150))
         card.bottomright = (gfx.W - s(24), gfx.H - s(258))
         box = pygame.Surface(card.size, pygame.SRCALPHA)
-        pygame.draw.rect(box, (14, 16, 22, 200), box.get_rect(), border_radius=si(16))
+        pygame.draw.rect(box, (14, 36, 84, 215), box.get_rect(), border_radius=si(16))
         surf.blit(box, card)
         pygame.draw.rect(surf, GOLD, card, si(2), border_radius=si(16))
         gfx.blit_text(surf, "cond", 18, "DAILY CHALLENGE", GOLD, (card.x + s(16), card.y + s(12)))
@@ -197,26 +197,18 @@ class HomeMenu:
 
     def _toggles(self, surf):
         app = self.app
-        sound = app.speaker[app.data["sound"]]
-        app.sound_rect = sound.get_rect(topright=(gfx.W - s(22), s(20)))
-        note = app.note[app.data["music"]]
-        app.music_rect = note.get_rect(topright=(app.sound_rect.left - s(22), s(20)))
-        icons = [(sound, app.sound_rect), (note, app.music_rect)]
+        y, x = s(38), gfx.W - s(42)
+        app.sound_rect = round_button(surf, app.speaker[app.data["sound"]], (x, y))
+        app.music_rect = round_button(surf, app.note[app.data["music"]], (x - s(60), y))
         if app.fs_available():
-            fs = app.fs_icon[app.is_fullscreen()]
-            app.fs_rect = fs.get_rect(topright=(app.music_rect.left - s(22), s(20)))
-            icons.append((fs, app.fs_rect))
-        for img, r in icons:
-            bg = r.inflate(s(16), s(14))
-            pygame.draw.rect(surf, (12, 14, 20), bg, border_radius=si(10))
-            surf.blit(img, r)
+            app.fs_rect = round_button(surf, app.fs_icon[app.is_fullscreen()], (x - s(120), y))
 
     def _info_card(self, surf):
         app = self.app
         card = pygame.Rect(0, 0, s(360), s(220))
         card.bottomright = (gfx.W - s(24), gfx.H - s(24))
         box = pygame.Surface(card.size, pygame.SRCALPHA)
-        pygame.draw.rect(box, (14, 16, 22, 200), box.get_rect(), border_radius=si(16))
+        pygame.draw.rect(box, (14, 36, 84, 215), box.get_rect(), border_radius=si(16))
         surf.blit(box, card)
         x, y = card.x + s(18), card.y + s(16)
         relay = app.relay
@@ -224,10 +216,11 @@ class HomeMenu:
         r = gfx.blit_text(surf, "cond", 22, f"#{app.data['player_id']}", GOLD, (x + s(20), y + s(12)), "midleft")
         from config import WEB
         status = "browser" if WEB else "online" if relay.online else "connecting..."
-        gfx.blit_text(surf, "cond", 16, status, MUTED,
-                      (r.right + s(8), y + s(13)), "midleft")
-        surf.blit(app.coin_icon, app.coin_icon.get_rect(midright=(card.right - s(70), y + s(12))))
-        gfx.blit_text(surf, "cond", 22, gfx.fmt(app.data["coins"]), WHITE, (card.right - s(18), y + s(12)), "midright")
+        if relay.online or WEB:
+            gfx.blit_text(surf, "cond", 16, status, MUTED, (r.right + s(8), y + s(13)), "midleft")
+        cr = gfx.blit_text(surf, "cond", 22, gfx.fmt(app.data["coins"]), WHITE, (card.right - s(18), y + s(12)),
+                           "midright")
+        surf.blit(app.coin_icon, app.coin_icon.get_rect(midright=(cr.left - s(6), y + s(12))))
         key = (app.data["driver"], app.data["vehicle"])
         if self.face_key != key:
             d = app.data["driver"]
