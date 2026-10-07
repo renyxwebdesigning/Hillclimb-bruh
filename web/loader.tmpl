@@ -371,6 +371,10 @@ function show_infobox() {
                    font-size: min(11vw, 17vh, 132px); line-height: .95; letter-spacing: -.01em;
                    -webkit-text-stroke: .075em #aa1c1e; paint-order: stroke fill;
                    text-shadow: 0 .07em 0 #5c0d0e, 0 .16em .25em rgba(0, 0, 0, .55); }
+        .hr-brand { margin: 0 0 calc(-1 * min(1.2vh, 10px)); font-family: "HR Black", system-ui, sans-serif; font-style: italic;
+                    font-size: min(2.6vw, 3.6vh, 20px); letter-spacing: .14em; color: var(--gold); text-transform: uppercase;
+                    text-shadow: 0 2px 0 rgba(0, 0, 0, .6); }
+        .hr-brand b { color: #fff; -webkit-text-stroke: .12em #b3161c; paint-order: stroke fill; }
         .hr-tag { margin: 0; font-family: "HR Black", system-ui, sans-serif; font-style: italic; color: var(--gold);
                   font-size: min(3.4vw, 4.6vh, 26px); text-shadow: 0 2px 0 rgba(0, 0, 0, .6); }
 
@@ -415,7 +419,11 @@ function show_infobox() {
             .hr-rotate { display: inline-flex; }
             .hr-center { top: 14%; }
             .hr-logo { font-size: 15vw; }
-            .hr-tag { font-size: 4.4vw; }
+            .hr-brand { margin: 0 0 calc(-1 * min(1.2vh, 10px)); font-family: "HR Black", system-ui, sans-serif; font-style: italic;
+                    font-size: min(2.6vw, 3.6vh, 20px); letter-spacing: .14em; color: var(--gold); text-transform: uppercase;
+                    text-shadow: 0 2px 0 rgba(0, 0, 0, .6); }
+        .hr-brand b { color: #fff; -webkit-text-stroke: .12em #b3161c; paint-order: stroke fill; }
+        .hr-tag { font-size: 4.4vw; }
             .hr-row, .hr-tip { font-size: 3.8vw; }
             .hr-box { width: 84vw; }
             .hr-car { width: 46vw; }
@@ -501,6 +509,7 @@ function show_infobox() {
         </div>
 
         <div class="hr-center">
+            <p class="hr-brand"><b>BRUH</b>GAMES presents</p>
             <h1 class="hr-logo">HILL RIDER</h1>
             <p class="hr-tag">Climb · Flip · Race your friends</p>
             <div class="hr-box">

@@ -30,7 +30,7 @@ jobs:
             exit 1
           fi
           tail -5 build.log
-          cp web/manifest.webmanifest web/sw.js web/icon-*.png web-src/build/web/
+          cp web/manifest.webmanifest web/sw.js web/icon-*.png web/favicon.png web-src/build/web/
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

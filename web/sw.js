@@ -1,11 +1,12 @@
 // Hill Rider offline support.
 // Our own files: network first (so updates arrive), the saved copy when offline.
 // The game engine from the pygbag server never changes for a given version: saved copy first.
-const CACHE = "hill-rider-v1";
+const CACHE = "hill-rider-v2";
 
 self.addEventListener("install", (e) => {
     e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "index.html", "manifest.webmanifest",
-                                                          "icon-192.png", "icon-512.png", "icon-180.png"])));
+                                                          "icon-192.png", "icon-512.png", "icon-180.png",
+                                                          "icon-maskable-192.png", "icon-maskable-512.png", "favicon.png"])));
     self.skipWaiting();
 });
 
