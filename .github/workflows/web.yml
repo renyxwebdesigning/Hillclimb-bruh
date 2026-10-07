@@ -20,6 +20,7 @@ jobs:
           python-version: "3.14"
       - name: Build web version
         run: |
+          sudo apt-get install -y -qq ffmpeg > /dev/null
           python -m pip install pygbag==0.9.3
           mkdir web-src
           cp *.py web-src/
