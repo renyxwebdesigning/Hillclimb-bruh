@@ -27,6 +27,7 @@ import pygame  # noqa: E402
 
 import ghost  # noqa: E402
 import gfx  # noqa: E402
+import lang  # noqa: E402
 import home  # noqa: E402
 import music  # noqa: E402
 import render  # noqa: E402
@@ -101,6 +102,7 @@ class App:
         pygame.key.stop_text_input()
         self.clock = pygame.time.Clock()
         self.data = save.load()
+        lang.set_lang(self.data["lang"])
         self.audio = Audio()
         self.audio.enabled = self.data["sound"]
         self.audio.music_on = self.data["music"]
@@ -191,6 +193,14 @@ class App:
 
     def apply_graphics(self):
         render.QUALITY = self.data["graphics"]
+
+    def set_language(self, code):
+        """Switch English/German: every text is translated as it is drawn, so rebuild cached buttons."""
+        self.data["lang"] = code
+        lang.set_lang(code)
+        gfx._text_cache.clear()
+        self.persist()
+        self.relayout(gfx.W, gfx.H)
 
     def fs_available(self):
         if not WEB:

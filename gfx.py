@@ -10,6 +10,8 @@ import sys
 
 import pygame
 
+import lang
+
 W, H, U = 1280, 720, 1.0
 CANVAS = None       # the opaque off-screen surface everything is drawn on
 
@@ -87,7 +89,8 @@ def font_px(kind, px):
 
 
 def text(kind, size, string, color, outline=None, width=2.0, shadow=0.0):
-    """Render text, optionally with a dark outline and drop shadow (cached)."""
+    """Render text, optionally with a dark outline and drop shadow (cached). Translated by lang.tr."""
+    string = lang.tr(string)
     key = (kind, size, string, color, outline, width, shadow)
     surf = _text_cache.get(key)
     if surf is not None:

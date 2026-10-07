@@ -11,8 +11,9 @@ import pygame
 import gfx
 from sprites import OUTLINE, STEEL, STEEL_HI, TYRE, _mapper, _poly, _tube, car_body, ring_arc
 
-EXTENT = {"jeep": 2.3, "dirtbike": 1.8, "chopper": 2.0, "monster": 2.7, "supercar": 2.35, "rocket": 2.55,
-          "tank": 3.15, "police": 2.4, "hoverboard": 2.0}
+EXTENT = {"jeep": 2.3, "dirtbike": 1.8, "chopper": 2.0, "monster": 2.7, "supercar": 2.35,
+          "tank": 3.15, "police": 2.4, "hoverboard": 2.0, "tesla": 2.35, "mini": 1.8, "b2": 2.5,
+          "excavator": 3.1, "lkw": 2.95, "horse": 2.3}
 
 CHROME, CHROME_DK = (214, 220, 228), (118, 124, 134)
 BLACK = (34, 34, 38)
@@ -197,34 +198,190 @@ def _supercar(surf, k, ppm):
     pygame.draw.line(surf, BLACK, P(-0.3, 0.3), P(0.9, 0.3), max(1, int(0.015 * sc)))
 
 
-def _rocket(surf, k, ppm):
+def _glass(surf, P, sc, pts, tint=(40, 56, 80, 140)):
+    """See-through window (the driver's head is drawn behind the body) with a soft reflection."""
+    pygame.draw.polygon(surf, tint, [P(*p) for p in pts])
+    (x0, y0), (x1, y1) = pts[0], pts[len(pts) // 2]
+    pygame.draw.line(surf, (220, 235, 255, 120), P(x0 + (x1 - x0) * 0.55, y0 + (y1 - y0) * 0.75),
+                     P(x0 + (x1 - x0) * 0.75, y0 + (y1 - y0) * 0.3), max(1, int(0.03 * sc)))
+
+
+def _arches(surf, P, sc, xs, y, r, rim=(20, 20, 24)):
+    for x in xs:
+        _cut(surf, P, sc, (x, y), r)
+        ring_arc(surf, rim, P(x, y), (r + 0.03) * sc, (r - 0.01) * sc, math.radians(5), math.radians(175))
+
+
+def _tesla(surf, k, ppm):
     P, sc = _mapper(surf, ppm, k)
-    white, shade, red, red_dk = (242, 244, 248), (196, 202, 214), (222, 40, 44), (150, 20, 26)
-    _poly(surf, P, sc, [(-1.1, 0.48), (-1.95, 0.95), (-2.02, 0.82), (-1.55, 0.4)], red, red_dk, 0.02)
-    _poly(surf, P, sc, [(-1.1, -0.28), (-1.95, -0.65), (-2.02, -0.52), (-1.55, -0.22)], red, red_dk, 0.02)
-    _poly(surf, P, sc, [(-1.55, 0.32), (-1.96, 0.44), (-1.96, -0.24), (-1.55, -0.12)], (66, 68, 76), (30, 30, 34), 0.02)
-    pygame.draw.line(surf, CHROME, P(-1.96, 0.44), P(-1.96, -0.24), max(1, int(0.05 * sc)))
-    tube = pygame.Rect(P(-1.62, 0.52), (3.08 * sc, 0.84 * sc))
-    pygame.draw.rect(surf, white, tube, border_radius=int(0.1 * sc))
-    pygame.draw.rect(surf, shade, pygame.Rect(P(-1.62, 0.02), (3.08 * sc, 0.34 * sc)),
-                     border_bottom_left_radius=int(0.1 * sc), border_bottom_right_radius=int(0.1 * sc))
-    pygame.draw.rect(surf, OUTLINE, tube, max(1, int(0.025 * sc)), border_radius=int(0.1 * sc))
-    for x in (-1.3, 0.98):
-        pygame.draw.rect(surf, red, pygame.Rect(P(x, 0.52), (0.13 * sc, 0.84 * sc)))
-    _poly(surf, P, sc, [(1.42, 0.52), (1.92, 0.4), (2.28, 0.1), (1.92, -0.2), (1.42, -0.32)], red, red_dk, 0.025)
-    pygame.draw.line(surf, (255, 140, 130), P(1.5, 0.44), P(1.9, 0.34), max(1, int(0.04 * sc)))
-    _poly(surf, P, sc, [(-0.2, -0.3), (-0.55, -0.62), (-0.7, -0.58), (-0.55, -0.3)], red, red_dk, 0.02)
-    for x in (-0.85, -0.45):
-        pygame.draw.circle(surf, CHROME_DK, P(x, 0.16), 0.11 * sc)
-        pygame.draw.circle(surf, (80, 150, 220), P(x, 0.16), 0.08 * sc)
-        pygame.draw.circle(surf, (200, 230, 255), P(x - 0.02, 0.19), 0.025 * sc)
-    t = gfx.font_px("heavy", 0.18 * sc).render("HR-1", True, red_dk)
-    surf.blit(t, t.get_rect(center=P(0.0, -0.12)))
-    canopy = pygame.Rect(P(0.18, 0.98), (0.8 * sc, 0.76 * sc))
-    _cut(surf, P, sc, (0.58, 0.6), 0.36)
-    pygame.draw.ellipse(surf, (150, 210, 250, 110), canopy)
-    pygame.draw.ellipse(surf, CHROME_DK, canopy, max(1, int(0.03 * sc)))
-    pygame.draw.arc(surf, (255, 255, 255, 200), canopy.inflate(-0.14 * sc, -0.14 * sc), 1.7, 2.6, max(1, int(0.04 * sc)))
+    white, shade, hi = (244, 245, 247), (196, 200, 208), (255, 255, 255)
+    body = [(-2.05, -0.22), (-2.06, 0.26), (-1.78, 0.44), (-1.5, 0.54), (-0.9, 0.82), (-0.2, 0.9), (0.45, 0.82),
+            (0.95, 0.56), (1.3, 0.44), (1.85, 0.3), (2.08, 0.12), (2.1, -0.1), (1.95, -0.26), (1.6, -0.34),
+            (-1.7, -0.34)]
+    pygame.draw.polygon(surf, white, [P(*p) for p in body])
+    pygame.draw.polygon(surf, shade, [P(-2.05, -0.06), P(2.1, -0.06), P(2.1, -0.1), P(1.95, -0.26), P(1.6, -0.34),
+                                      P(-1.7, -0.34), P(-2.05, -0.22)])
+    pygame.draw.line(surf, hi, P(-1.6, 0.42), P(1.6, 0.36), max(1, int(0.03 * sc)))           # shoulder line
+    _arches(surf, P, sc, (-1.32, 1.38), -0.25, 0.44)
+    # the glass roof: one sweep from the windscreen to the boot
+    _glass(surf, P, sc, [(-1.62, 0.5), (-0.95, 0.78), (-0.2, 0.86), (0.42, 0.78), (0.9, 0.52)], (34, 44, 60, 170))
+    pygame.draw.line(surf, white, P(-0.32, 0.5), P(-0.28, 0.86), max(1, int(0.05 * sc)))     # B pillar
+    for x in (-0.95, 0.3):                                                                   # flush handles
+        pygame.draw.rect(surf, shade, pygame.Rect(P(x, 0.32), (0.22 * sc, 0.04 * sc)), border_radius=int(0.02 * sc))
+    pygame.draw.line(surf, shade, P(-0.32, 0.46), P(-0.36, -0.2), max(1, int(0.015 * sc)))   # door seam
+    pygame.draw.polygon(surf, OUTLINE, [P(*p) for p in body], max(1, int(0.022 * sc)))
+    pygame.draw.polygon(surf, (250, 252, 255), [P(1.7, 0.26), P(2.04, 0.15), P(2.02, 0.11), P(1.72, 0.2)])
+    pygame.draw.line(surf, (220, 30, 36), P(-2.05, 0.3), P(-1.82, 0.4), max(1, int(0.06 * sc)))
+    t = gfx.font_px("heavy", 0.2 * sc).render("T", True, (200, 30, 36))
+    surf.blit(t, t.get_rect(center=P(1.96, 0.02)))
+
+
+def _mini(surf, k, ppm):
+    P, sc = _mapper(surf, ppm, k)
+    red, red_dk, white = (206, 26, 34), (140, 12, 20), (246, 246, 244)
+    body = [(-1.45, -0.28), (-1.47, 0.42), (-1.15, 0.47), (0.55, 0.47), (0.78, 0.44), (1.38, 0.36), (1.5, 0.18),
+            (1.5, -0.14), (1.4, -0.3)]
+    pygame.draw.polygon(surf, red, [P(*p) for p in body])
+    pygame.draw.polygon(surf, red_dk, [P(-1.46, -0.06), P(1.5, -0.06), P(1.5, -0.14), P(1.4, -0.3), P(-1.45, -0.28)])
+    _arches(surf, P, sc, (-0.98, 1.0), -0.27, 0.36)
+    # white roof on thin pillars, dark windows
+    _glass(surf, P, sc, [(-1.22, 0.47), (-1.2, 0.88), (0.36, 0.88), (0.72, 0.47)], (34, 44, 60, 170))
+    for a, b in (((-1.22, 0.47), (-1.2, 0.9)), ((-0.32, 0.47), (-0.32, 0.9)), ((0.36, 0.9), (0.72, 0.47))):
+        pygame.draw.line(surf, red, P(*a), P(*b), max(1, int(0.07 * sc)))
+    _poly(surf, P, sc, [(-1.28, 0.88), (0.42, 0.88), (0.4, 0.98), (-1.25, 0.98)], white, OUTLINE, 0.02)
+    for dy in (0.4, 0.31):                                                           # bonnet stripes
+        pygame.draw.line(surf, white, P(0.8, dy + 0.02), P(1.38, dy - 0.05), max(1, int(0.035 * sc)))
+    pygame.draw.polygon(surf, OUTLINE, [P(*p) for p in body], max(1, int(0.022 * sc)))
+    pygame.draw.circle(surf, CHROME_DK, P(1.42, 0.2), 0.1 * sc)
+    pygame.draw.circle(surf, (255, 252, 230), P(1.43, 0.2), 0.075 * sc)
+    pygame.draw.rect(surf, CHROME, pygame.Rect(P(1.36, -0.12), (0.18 * sc, 0.08 * sc)), border_radius=int(0.02 * sc))
+    pygame.draw.rect(surf, (230, 40, 40), pygame.Rect(P(-1.5, 0.3), (0.07 * sc, 0.12 * sc)))
+    pygame.draw.rect(surf, CHROME, pygame.Rect(P(-1.0, 0.26), (0.16 * sc, 0.035 * sc)))
+
+
+def _b2(surf, k, ppm):
+    P, sc = _mapper(surf, ppm, k)
+    top, under, edge = (92, 98, 110), (58, 62, 72), (34, 36, 42)
+    # the far wing, seen a little from above: a pale sliver behind the fuselage
+    _poly(surf, P, sc, [(1.9, 0.08), (0.2, 0.3), (-2.4, 0.38), (-2.0, 0.2), (-2.3, 0.14), (-1.6, 0.06)],
+          (120, 126, 138), edge, 0.015)
+    body = [(2.3, 0.05), (1.6, 0.3), (1.05, 0.44), (0.6, 0.62), (0.05, 0.56), (-0.6, 0.42), (-1.6, 0.22),
+            (-2.2, 0.06), (-1.92, -0.04), (-2.12, -0.12), (-1.5, -0.18), (1.0, -0.18), (1.9, -0.1)]
+    pygame.draw.polygon(surf, top, [P(*p) for p in body])
+    pygame.draw.polygon(surf, under, [P(2.25, 0.0), P(1.9, -0.1), P(1.0, -0.18), P(-1.5, -0.18), P(-2.12, -0.12),
+                                      P(-1.92, -0.04), P(-2.0, 0.0)])
+    pygame.draw.line(surf, (140, 148, 162), P(1.6, 0.27), P(-1.5, 0.2), max(1, int(0.025 * sc)))
+    for x in (-0.55, 0.05):                                                          # engine intakes
+        _poly(surf, P, sc, [(x - 0.25, 0.45), (x, 0.56), (x + 0.22, 0.5), (x + 0.1, 0.44)], (40, 42, 50), edge, 0.012)
+    _glass(surf, P, sc, [(0.7, 0.42), (0.76, 0.58), (1.05, 0.5), (1.2, 0.4)], (20, 24, 32, 150))
+    pygame.draw.polygon(surf, edge, [P(*p) for p in body], max(1, int(0.022 * sc)))
+    pygame.draw.rect(surf, (30, 32, 36), pygame.Rect(P(-2.18, 0.16), (0.12 * sc, 0.12 * sc)))
+
+
+def _excavator(surf, k, ppm):
+    P, sc = _mapper(surf, ppm, k)
+    yel, yel_dk, yel_hi, steel = (250, 190, 22), (190, 132, 0), (255, 222, 110), (70, 72, 78)
+    # undercarriage: track frame and car body between the tracks and the turning upper part
+    _poly(surf, P, sc, [(-1.45, -0.02), (1.45, -0.02), (1.25, 0.2), (-1.25, 0.2)], (64, 66, 72), (30, 30, 34), 0.02)
+    _poly(surf, P, sc, [(-0.7, 0.18), (0.7, 0.18), (0.6, 0.44), (-0.6, 0.44)], (52, 54, 60), (30, 30, 34), 0.02)
+    pygame.draw.rect(surf, (40, 40, 44), pygame.Rect(P(-1.55, 0.5), (2.9 * sc, 0.08 * sc)))       # slewing ring
+    _tube(surf, P, sc, [(-1.15, 0.95), (-1.15, 1.92)], 0.08, (52, 54, 60))                      # exhaust stack
+    house = [(-1.75, 0.45), (-1.8, 0.95), (-0.95, 1.0), (0.65, 1.0), (0.75, 0.45)]
+    _poly(surf, P, sc, house, yel, (90, 62, 0), 0.025)
+    _poly(surf, P, sc, [(-1.85, 0.45), (-1.9, 0.92), (-1.55, 0.95), (-1.5, 0.45)], (60, 62, 68), (30, 30, 34), 0.02)
+    pygame.draw.line(surf, yel_hi, P(-1.4, 0.94), P(0.55, 0.95), max(1, int(0.035 * sc)))
+    for x in (-1.25, -1.05, -0.85):                                                             # engine grille
+        pygame.draw.line(surf, yel_dk, P(x, 0.6), P(x, 0.85), max(1, int(0.03 * sc)))
+    # cab with see-through glass
+    cab = [(-0.95, 1.0), (-0.95, 1.78), (0.1, 1.78), (0.3, 1.0)]
+    _poly(surf, P, sc, cab, yel, (90, 62, 0), 0.025)
+    _glass(surf, P, sc, [(-0.85, 1.05), (-0.85, 1.68), (0.04, 1.68), (0.2, 1.05)], (60, 90, 120, 120))
+    pygame.draw.line(surf, yel, P(-0.4, 1.05), P(-0.4, 1.68), max(1, int(0.05 * sc)))
+    # boom, arm, cylinders and bucket
+    boom = [(0.3, 0.78), (0.55, 1.0), (1.55, 1.98), (1.82, 1.86), (0.75, 0.75)]
+    _poly(surf, P, sc, boom, yel, (90, 62, 0), 0.025)
+    pygame.draw.line(surf, yel_hi, P(0.5, 0.95), P(1.55, 1.92), max(1, int(0.03 * sc)))
+    arm = [(1.6, 1.98), (1.86, 1.84), (2.72, 1.08), (2.58, 0.98)]
+    _poly(surf, P, sc, arm, yel, (90, 62, 0), 0.025)
+    for a, b in (((0.6, 0.62), (1.25, 1.55)), ((1.75, 2.02), (2.5, 1.32))):
+        _tube(surf, P, sc, [a, b], 0.06, (160, 166, 176), hi=(230, 234, 240))
+    bucket = [(2.52, 1.06), (2.92, 0.98), (2.98, 0.55), (2.7, 0.42), (2.42, 0.5), (2.6, 0.62), (2.72, 0.88)]
+    _poly(surf, P, sc, bucket, steel, (30, 30, 34), 0.022)
+    for i in range(3):
+        pygame.draw.polygon(surf, (200, 204, 210), [P(2.47 + i * 0.09, 0.47), P(2.52 + i * 0.09, 0.45),
+                                                    P(2.46 + i * 0.09, 0.36)])
+    for c in ((0.62, 0.86), (1.7, 1.9), (2.62, 1.03)):
+        pygame.draw.circle(surf, (50, 52, 58), P(*c), 0.07 * sc)
+    pygame.draw.circle(surf, (255, 150, 30), P(0.0, 1.84), 0.07 * sc)                        # beacon
+
+
+def _lkw(surf, k, ppm):
+    P, sc = _mapper(surf, ppm, k)
+    white, grey, blue, red = (246, 246, 248), (206, 210, 218), (30, 90, 200), (226, 40, 44)
+    pygame.draw.rect(surf, (36, 36, 40), pygame.Rect(P(-2.5, 0.12), (5.0 * sc, 0.2 * sc)))         # chassis
+    box = pygame.Rect(P(-2.58, 2.02), (3.52 * sc, 1.92 * sc))
+    pygame.draw.rect(surf, grey, box, border_radius=int(0.06 * sc))
+    pygame.draw.rect(surf, white, box.inflate(-0.12 * sc, -0.12 * sc), border_radius=int(0.05 * sc))
+    for i in range(1, 7):
+        x = -2.58 + i * 0.5
+        pygame.draw.line(surf, grey, P(x, 1.92), P(x, 0.2), max(1, int(0.015 * sc)))
+    pygame.draw.rect(surf, OUTLINE, box, max(1, int(0.022 * sc)), border_radius=int(0.06 * sc))
+    t = gfx.font_px("black_i", 0.46 * sc).render("BRUH", True, red)
+    surf.blit(t, t.get_rect(center=P(-0.9, 1.25)))
+    t = gfx.font_px("heavy", 0.22 * sc).render("GAMES  LOGISTIK", True, blue)
+    surf.blit(t, t.get_rect(center=P(-0.9, 0.82)))
+    # the cab
+    cab = [(1.0, 0.0), (1.02, 1.6), (2.35, 1.62), (2.5, 1.4), (2.6, 0.9), (2.62, 0.0), (2.5, -0.2), (1.1, -0.2)]
+    _poly(surf, P, sc, cab, white, OUTLINE, 0.022)
+    pygame.draw.polygon(surf, blue, [P(1.02, 0.42), P(2.62, 0.42), P(2.62, 0.3), P(1.02, 0.3)])
+    _glass(surf, P, sc, [(1.2, 0.95), (1.2, 1.48), (2.28, 1.5), (2.42, 0.95)], (40, 60, 90, 150))
+    pygame.draw.line(surf, white, P(1.85, 0.95), P(1.85, 1.49), max(1, int(0.05 * sc)))
+    pygame.draw.line(surf, grey, P(1.85, 0.9), P(1.85, -0.1), max(1, int(0.015 * sc)))       # door seam
+    pygame.draw.rect(surf, (40, 40, 46), pygame.Rect(P(2.52, 0.75), (0.12 * sc, 0.45 * sc)))  # grille
+    pygame.draw.rect(surf, (255, 250, 220), pygame.Rect(P(2.5, 0.12), (0.12 * sc, 0.12 * sc)))
+    _tube(surf, P, sc, [(2.5, 1.35), (2.7, 1.35), (2.7, 1.0)], 0.035, (40, 40, 46))            # mirror arm
+    pygame.draw.rect(surf, (40, 40, 46), pygame.Rect(P(2.64, 1.12), (0.1 * sc, 0.24 * sc)))
+    _tube(surf, P, sc, [(0.95, 1.6), (0.95, 2.18)], 0.07, (150, 154, 162))                    # exhaust stack
+    _arches(surf, P, sc, (-1.6, 1.75), -0.66, 0.62)
+    pygame.draw.rect(surf, (230, 30, 30), pygame.Rect(P(-2.62, 0.4), (0.08 * sc, 0.2 * sc)))
+
+
+def _horse(surf, k, ppm):
+    """Horse (without legs: those run, see render) and its rider (without the head)."""
+    P, sc = _mapper(surf, ppm, k)
+    coat, coat_dk, coat_hi, mane = (150, 96, 54), (104, 62, 32), (186, 128, 78), (52, 32, 22)
+    # tail
+    _poly(surf, P, sc, [(-1.0, 0.28), (-1.25, 0.2), (-1.42, -0.15), (-1.38, -0.45), (-1.22, -0.2), (-1.05, 0.1)],
+          mane, None)
+    # torso, neck, head
+    body = [(-1.05, 0.05), (-0.95, 0.32), (-0.4, 0.42), (0.4, 0.38), (0.78, 0.5), (1.18, 0.92), (1.32, 1.06),
+            (1.62, 1.04), (1.92, 0.78), (1.88, 0.68), (1.55, 0.7), (1.25, 0.55), (0.98, 0.12), (0.85, -0.22),
+            (0.2, -0.3), (-0.6, -0.26), (-0.98, -0.12)]
+    from drivers import spline
+    body = spline(body, steps=6)
+    _poly(surf, P, sc, body, coat, (70, 40, 20), 0.022)
+    shade = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+    pygame.draw.polygon(shade, (*coat_dk, 255), [P(-0.98, -0.1), P(0.85, -0.2), P(0.2, -0.3), P(-0.6, -0.26)])
+    surf.blit(shade, (0, 0))
+    pygame.draw.line(surf, coat_hi, P(-0.8, 0.3), P(0.35, 0.36), max(1, int(0.04 * sc)))
+    pygame.draw.ellipse(surf, (90, 56, 34), pygame.Rect(P(1.72, 0.84), (0.2 * sc, 0.14 * sc)))     # muzzle
+    pygame.draw.circle(surf, (20, 14, 12), P(1.55, 0.92), 0.04 * sc)                               # eye
+    _poly(surf, P, sc, [(1.36, 1.02), (1.38, 1.2), (1.48, 1.04)], coat_dk, None)                   # ear
+    for i in range(7):                                                                             # mane
+        x, y = 0.8 + i * 0.08, 0.55 + i * 0.075
+        _poly(surf, P, sc, [(x, y), (x - 0.14, y - 0.06), (x + 0.06, y + 0.08)], mane, None)
+    # saddle
+    _poly(surf, P, sc, [(-0.45, 0.4), (-0.4, 0.52), (0.2, 0.52), (0.3, 0.42)], (120, 40, 30), (60, 20, 14), 0.015)
+    pygame.draw.line(surf, (50, 40, 34), P(-0.05, 0.4), P(-0.05, -0.2), max(1, int(0.03 * sc)))   # girth
+    # rider: leg in the stirrup, body leaning forward, hands on the reins
+    pants, jacket, boot = (232, 226, 210), (30, 60, 130), (30, 22, 18)
+    _limb(surf, P, sc, (-0.1, 0.62), (0.18, 0.32), 0.15, pants)
+    _limb(surf, P, sc, (0.18, 0.32), (0.08, 0.02), 0.12, boot)
+    _limb(surf, P, sc, (-0.12, 0.62), (-0.05, 1.22), 0.3, jacket)
+    _limb(surf, P, sc, (0.0, 1.14), (0.32, 0.92), 0.1, jacket)
+    _limb(surf, P, sc, (0.32, 0.92), (0.58, 0.86), 0.09, jacket)
+    pygame.draw.circle(surf, (236, 190, 150), P(0.6, 0.86), 0.05 * sc)
+    pygame.draw.line(surf, (40, 30, 24), P(0.6, 0.86), P(1.78, 0.84), max(1, int(0.018 * sc)))   # reins
 
 
 def _tank(surf, k, ppm):
@@ -294,8 +451,9 @@ def _hoverboard(surf, k, ppm):
         pygame.draw.circle(surf, (236, 190, 150), P(hx, hy), 0.055 * sc)
 
 
-BODIES = {"dirtbike": _dirtbike, "chopper": _chopper, "monster": _monster, "supercar": _supercar, "rocket": _rocket,
-          "tank": _tank, "police": _police, "hoverboard": _hoverboard}
+BODIES = {"dirtbike": _dirtbike, "chopper": _chopper, "monster": _monster, "supercar": _supercar,
+          "tank": _tank, "police": _police, "hoverboard": _hoverboard, "tesla": _tesla, "mini": _mini, "b2": _b2,
+          "excavator": _excavator, "lkw": _lkw, "horse": _horse}
 
 
 def body(key, ppm):
@@ -342,6 +500,7 @@ def head(style, ppm):
                 "helmet_green": ((96, 112, 60), (60, 70, 36), (36, 46, 40)),
                 "police": ((32, 44, 90), (240, 200, 60), (36, 46, 70)),
                 "racer": ((32, 32, 36), (255, 198, 22), (60, 90, 140)),
+                "hardhat": ((255, 196, 20), (232, 150, 0), (36, 46, 70)),
             }[style]
             pygame.draw.circle(surf, OUTLINE, P(0, 0), (r + 0.02) * sc)
             pygame.draw.circle(surf, shell, P(0, 0), r * sc)
@@ -421,6 +580,33 @@ def wheel(style, radius, ppm):
             for i in range(4):
                 a = i * math.tau / 4
                 pygame.draw.circle(surf, (64, 68, 58), P(math.cos(a) * R * 0.42, math.sin(a) * R * 0.42), 0.04 * sc)
+        elif style == "aero":                       # Tesla-style aero cover
+            pygame.draw.circle(surf, TYRE, P(0, 0), R * sc)
+            pygame.draw.circle(surf, (58, 60, 66), P(0, 0), (R - 0.06) * sc)
+            for i in range(5):
+                a = i * math.tau / 5
+                pygame.draw.arc(surf, (150, 154, 162), pygame.Rect(P(-(R - 0.1), R - 0.1), (2 * (R - 0.1) * sc,) * 2),
+                                a, a + 0.7, max(1, int(0.04 * sc)))
+            pygame.draw.circle(surf, (110, 114, 122), P(0, 0), (R - 0.2) * sc)
+            pygame.draw.circle(surf, (210, 212, 218), P(0, 0), 0.06 * sc)
+        elif style == "mini":                       # small silver spokes
+            pygame.draw.circle(surf, TYRE, P(0, 0), R * sc)
+            pygame.draw.circle(surf, (190, 194, 202), P(0, 0), (R - 0.08) * sc)
+            for i in range(8):
+                a = i * math.tau / 8
+                pygame.draw.line(surf, (110, 114, 122), P(0, 0), P(math.cos(a) * (R - 0.09), math.sin(a) * (R - 0.09)),
+                                 max(1, int(0.03 * sc)))
+            pygame.draw.circle(surf, CHROME, P(0, 0), 0.06 * sc)
+        elif style == "truck":                      # steel rim with lug nuts
+            pygame.draw.circle(surf, TYRE, P(0, 0), R * sc)
+            pygame.draw.circle(surf, (40, 40, 44), P(0, 0), (R - 0.05) * sc, max(1, int(0.02 * sc)))
+            pygame.draw.circle(surf, (170, 174, 182), P(0, 0), (R - 0.17) * sc)
+            pygame.draw.circle(surf, (120, 124, 132), P(0, 0), (R - 0.27) * sc)
+            for i in range(10):
+                a = i * math.tau / 10
+                pygame.draw.circle(surf, (230, 232, 236), P(math.cos(a) * (R - 0.22), math.sin(a) * (R - 0.22)),
+                                   0.025 * sc)
+            pygame.draw.circle(surf, (80, 84, 92), P(0, 0), 0.07 * sc)
         elif style == "none":
             pass
         else:  # solid

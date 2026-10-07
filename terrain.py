@@ -11,7 +11,7 @@ import math
 
 import numpy as np
 
-from config import coin_value_at
+from config import coin_value_at, season_at
 from progress import place_trophies
 
 RES = 0.25          # metres between height samples
@@ -73,6 +73,7 @@ class Terrain:
         self._tunnel_a = [a for a, _ in self.tunnels]
         self.fuel, self.coins = self._place_pickups(np.random.default_rng(stage["seed"] + 1))
         self.props = self._place_props(np.random.default_rng(stage["seed"] + 3))
+        self.landmarks = self._place_landmarks(np.random.default_rng(stage["seed"] + 5))
         self.trophies = place_trophies(self, __import__("random").Random(stage["seed"] * 31))
 
     # ----------------------------------------------------------- features
@@ -134,7 +135,7 @@ class Terrain:
                     v[seg] = h[seg]
                 ha, hb = h[ia], h[ib]
                 road = ha + (hb - ha) * t
-                roof = road + 3.3 + 0.25 * np.sin(np.pi * t)
+                roof = road + 4.0 + 0.25 * np.sin(np.pi * t)          # room for the LKW and the horse rider
                 v[sl] = np.maximum(v[sl], roof + 1.0 + 3.4 * np.sin(np.pi * t) ** 0.7)
                 h[sl] = road
                 ceil[sl] = roof
@@ -269,19 +270,42 @@ class Terrain:
             x += span + float(rng.uniform(45, 95))
         return fuel, coins
 
+    def _kinds(self, x, what):
+        """Prop or landmark kinds at x (the Four Seasons stage changes them with the season)."""
+        s = season_at(self.stage, x)
+        if s is None:
+            return self.stage.get(what, ())
+        return self.stage["seasons"][s[0]][what]
+
     def _place_props(self, rng):
         """Scenery along the track: (x, kind, scale, mirrored)."""
-        kinds = self.stage["props"]
         props = []
         x = 12.0
         while x < LENGTH - 50:
-            x += float(rng.uniform(5, 19))
+            x += float(rng.uniform(3.5, 12.5))
             if self.feature_at(x, 4.0):
                 continue
             slope = abs(self.visual_height(x + 0.6) - self.visual_height(x - 0.6)) / 1.2
+            kinds = self._kinds(x, "props")
             kind = kinds[int(rng.integers(len(kinds)))]
             if slope > 0.55 and kind not in ("rock", "moonrock", "flowers", "skull", "cone", "lavarock", "marsrock",
                                               "fern", "mushroom"):
                 continue
             props.append((x, kind, float(rng.uniform(0.8, 1.2)), bool(rng.random() < 0.5)))
         return props
+
+    def _place_landmarks(self, rng):
+        """A big set piece (windmill, pyramid, temple...) every few hundred metres, on fairly flat ground."""
+        marks = []
+        x = 90.0
+        while x < LENGTH - 60:
+            x += float(rng.uniform(250, 400))
+            kinds = self._kinds(x, "landmarks")
+            if not kinds:
+                continue
+            for _ in range(12):                               # shuffle along to a flat spot
+                if not self.feature_at(x, 12.0) and abs(self.visual_height(x + 4) - self.visual_height(x - 4)) < 1.6:
+                    marks.append((x, kinds[int(rng.integers(len(kinds)))], bool(rng.random() < 0.5)))
+                    break
+                x += 9.0
+        return marks

@@ -11,6 +11,8 @@ PHYS_DT = 1 / 500          # fixed physics step (s)
 # climbing and flips stay the same while jumps get shorter and landings heavier.
 GRAVITY_SCALE = 1.7
 BASE_PPM = 56              # pixels per metre at 720p, before speed zoom-out
+SEASON_LENGTH = 450.0      # metres per season on the Four Seasons stage
+SEASON_BLEND = 70.0        # metres over which one season fades into the next
 FUEL_SECONDS = 30          # a full tank lasts this long (fuel_rate 1.0)
 BOOST_RECHARGE = 9.0       # seconds to refill an empty boost tank
 
@@ -27,7 +29,8 @@ STAGES = [
         top=(132, 200, 46), top_hi=(182, 232, 90), top_lo=(92, 156, 34),
         top_depth=0.34, water=(64, 156, 224), cave=(58, 40, 26),
         octaves=[(72, 11.0), (29, 6.5), (11, 1.8), (4.5, 0.25)],
-        decor="clouds", props=("tree", "tree", "bush", "flowers", "fence", "rock"), cycle=True,
+        decor="clouds", props=("tree", "tree", "bush", "flowers", "fence", "rock", "haybale", "sunflower", "mailbox"),
+        landmarks=("windmill", "barn"), cycle=True,
     ),
     dict(
         key="desert", name="Desert", seed=23,
@@ -38,7 +41,8 @@ STAGES = [
         top=(240, 204, 128), top_hi=(252, 228, 166), top_lo=(206, 160, 86),
         top_depth=0.30, water=None, cave=(96, 62, 34),
         octaves=[(95, 15.0), (36, 6.5), (13, 1.2), (5, 0.15)],
-        decor="sun", props=("cactus", "cactus", "cactus2", "rock", "skull", "deadbush"), cycle=True,
+        decor="sun", props=("cactus", "cactus", "cactus2", "rock", "skull", "deadbush", "tumbleweed", "barrel", "bones"),
+        landmarks=("pyramid", "pumpjack"), cycle=True,
     ),
     dict(
         key="arctic", name="Arctic", seed=37,
@@ -49,7 +53,8 @@ STAGES = [
         top=(244, 249, 255), top_hi=(255, 255, 255), top_lo=(196, 218, 238),
         top_depth=0.40, water=(150, 210, 240), cave=(40, 70, 104),
         octaves=[(64, 11.0), (24, 5.5), (9, 1.6), (4, 0.2)],
-        decor="snow", props=("pine", "pine", "pine", "snowman", "rock", "crystal"), cycle=True,
+        decor="snow", props=("snowpine", "pine", "snowpine", "snowman", "rock", "crystal", "penguin", "icerock", "penguin"),
+        landmarks=("igloo",), cycle=True,
     ),
     dict(
         key="moon", name="Moon", seed=53,
@@ -60,7 +65,8 @@ STAGES = [
         top=(198, 194, 210), top_hi=(226, 222, 236), top_lo=(150, 146, 164),
         top_depth=0.22, water=None, cave=(44, 42, 58),
         octaves=[(84, 8.0), (31, 3.8), (10, 1.2), (4, 0.2)],
-        decor="space", props=("moonrock", "moonrock", "dish", "flag", "moonrock"), cycle=False, base_dark=0.35,
+        decor="space", props=("moonrock", "moonrock", "dish", "flag", "moonrock", "satellite", "solarpanel"),
+        landmarks=("lander",), cycle=False, base_dark=0.35,
     ),
 ]
 STAGES += [
@@ -73,7 +79,8 @@ STAGES += [
         top=(70, 72, 78), top_hi=(110, 112, 120), top_lo=(46, 46, 52),
         top_depth=0.36, water=(70, 120, 170), cave=(40, 40, 46),
         octaves=[(80, 7.0), (32, 3.6), (12, 0.6), (5, 0.08)],
-        decor="city", props=("lamp", "lamp", "car", "hydrant", "cone", "bin", "sign"), cycle=True,
+        decor="city", props=("lamp", "lamp", "car", "hydrant", "cone", "bin", "sign", "bench", "trafficlight", "car"),
+        landmarks=("billboard",), cycle=True,
     ),
     dict(
         key="volcano", name="Volcano", seed=71,
@@ -84,7 +91,8 @@ STAGES += [
         top=(92, 82, 82), top_hi=(130, 118, 116), top_lo=(52, 44, 46),
         top_depth=0.28, water=(255, 110, 20), lava=True, cave=(36, 22, 20),
         octaves=[(70, 10.0), (26, 5.5), (10, 1.6), (4, 0.25)],
-        decor="volcano", props=("deadtree", "lavarock", "vent", "lavarock", "skull"), cycle=False, base_dark=0.12,
+        decor="volcano", props=("deadtree", "lavarock", "vent", "lavarock", "skull", "bones", "warnsign"),
+        landmarks=("hut",), cycle=False, base_dark=0.12,
     ),
     dict(
         key="jungle", name="Jungle", seed=81,
@@ -95,7 +103,8 @@ STAGES += [
         top=(56, 150, 50), top_hi=(110, 196, 70), top_lo=(30, 104, 36),
         top_depth=0.42, water=(70, 150, 140), cave=(30, 42, 24),
         octaves=[(66, 10.0), (25, 5.5), (10, 1.8), (4, 0.3)],
-        decor="jungle", props=("palm", "palm", "fern", "bigflower", "mushroom", "fern", "rock"), cycle=True,
+        decor="jungle", props=("palm", "palm", "fern", "bigflower", "mushroom", "fern", "rock", "bamboo", "totem", "bamboo"),
+        landmarks=("temple",), cycle=True,
     ),
     dict(
         key="mars", name="Mars", seed=91,
@@ -106,7 +115,43 @@ STAGES += [
         top=(214, 130, 84), top_hi=(236, 164, 116), top_lo=(168, 92, 58),
         top_depth=0.24, water=None, cave=(80, 36, 24),
         octaves=[(88, 9.0), (32, 4.2), (11, 1.3), (4, 0.2)],
-        decor="mars", props=("marsrock", "marsrock", "rover", "dish", "marsrock"), cycle=False, base_dark=0.0,
+        decor="mars", props=("marsrock", "marsrock", "rover", "dish", "marsrock", "solarpanel", "antenna"),
+        landmarks=("dome", "launchpad"), cycle=False, base_dark=0.0,
+    ),
+    dict(
+        key="seasons", name="Four Seasons", seed=101,
+        gravity=9.8, grip=1.0,
+        # the colours below are summer's; the "seasons" list takes over while you drive (render.season_stage)
+        sky=((60, 150, 232), (190, 230, 252)),
+        far=((160, 206, 160), (110, 176, 120)),
+        ground=(160, 104, 52), pebble=(136, 86, 42), pebble_hi=(176, 120, 66),
+        top=(120, 190, 40), top_hi=(170, 226, 80), top_lo=(84, 146, 30),
+        top_depth=0.34, water=(64, 156, 224), cave=(58, 40, 26),
+        octaves=[(80, 12.0), (30, 6.0), (11, 1.6), (4.5, 0.25)],
+        decor="seasons", props=("tree", "bush", "flowers"), landmarks=("barn",), cycle=False, base_dark=0.0,
+        seasons=[
+            dict(name="WINTER", grip=0.68, weather="snow", decor="snow",
+                 sky=((120, 160, 215), (225, 238, 250)), far=((210, 226, 242), (176, 200, 228)),
+                 ground=(126, 100, 84), pebble=(110, 90, 76), pebble_hi=(150, 130, 110),
+                 top=(244, 249, 255), top_hi=(255, 255, 255), top_lo=(196, 214, 236),
+                 props=("snowpine", "snowpine", "snowman", "rock", "penguin", "icerock"), landmarks=("igloo",)),
+            dict(name="SPRING", grip=1.0, weather="petals", decor="clouds",
+                 sky=((96, 176, 236), (214, 240, 252)), far=((176, 222, 190), (130, 196, 150)),
+                 ground=(150, 98, 54), pebble=(126, 80, 42), pebble_hi=(166, 116, 66),
+                 top=(140, 210, 70), top_hi=(190, 240, 110), top_lo=(98, 166, 46),
+                 props=("blossom", "blossom", "tulips", "bigflower", "bush", "flowers"), landmarks=("windmill",)),
+            dict(name="SUMMER", grip=1.05, weather=None, decor="sun",
+                 sky=((60, 150, 232), (190, 230, 252)), far=((160, 206, 160), (110, 176, 120)),
+                 ground=(160, 104, 52), pebble=(136, 86, 42), pebble_hi=(176, 120, 66),
+                 top=(120, 190, 40), top_hi=(170, 226, 80), top_lo=(84, 146, 30),
+                 props=("tree", "tree", "sunflower", "haybale", "bush", "fence"), landmarks=("barn",)),
+            dict(name="FALL", grip=0.95, weather="leaves", decor="clouds",
+                 sky=((230, 170, 110), (250, 222, 180)), far=((206, 160, 110), (176, 120, 80)),
+                 ground=(128, 82, 46), pebble=(110, 70, 40), pebble_hi=(150, 100, 60),
+                 top=(196, 136, 52), top_hi=(232, 176, 80), top_lo=(150, 96, 36),
+                 props=("autumntree", "autumntree", "pumpkin", "scarecrow", "leafpile", "deadbush"),
+                 landmarks=("barn", "windmill")),
+        ],
     ),
 ]
 STAGE_BY_KEY = {s["key"]: s for s in STAGES}
@@ -177,19 +222,6 @@ VEHICLES = [
         rig="strut", sound="supercar", head_art="racer", wheel_art=("sport", "sport"),
         head_behind=True,
     ),
-    dict(
-        key="rocket", name="Rocket", tagline="Why drive? Fly!",
-        mass=170, inertia=210, rest=0.3, ext=(0.12, 0.48),
-        wheels=[(-0.95, -0.42, 0.3, 12, 1.0), (1.05, -0.42, 0.3, 12, 0.0)],
-        torque=(260, 30), spin=(45, 4.0), spring=(12000, 900), damping=(1200, 100),
-        grip=0.9, air_torque=1100, thrust=(1100, 120), boost=(3200, 240), fuel_rate=1.25,
-        hull=[(2.25, 0.1), (1.6, 0.45), (1.6, -0.25), (-1.55, 0.5), (-1.55, -0.3),
-              (-1.95, 0.9), (-1.95, -0.6), (0.6, 0.86)],
-        head=(0.52, 0.6), head_r=0.24, exhaust=(-1.9, 0.1), nozzle=(-1.9, 0.1),
-        engine=(-1.6, 0.1), lights=[(2.2, 0.1)], tail=[],
-        rig="gear", sound="rocket", head_art="astro", wheel_art=("solid", "solid"),
-        head_behind=True,
-    ),
 ]
 VEHICLES += [
     dict(
@@ -227,8 +259,91 @@ VEHICLES += [
         engine=(0.0, 0.05), lights=[(0.85, 0.05)], tail=[(-0.85, 0.05)],
         rig="hover", sound="hover", head_art="helmet", wheel_art=("none", "none"),
     ),
+    dict(
+        key="tesla", name="Tesla", tagline="Silent, instant torque",
+        mass=260, inertia=250, rest=0.28, ext=(0.12, 0.42),
+        wheels=[(-1.32, -0.02, 0.38, 24, 0.5), (1.38, -0.02, 0.38, 24, 0.5)],
+        torque=(1150, 130), spin=(48, 4.4), spring=(26000, 1900), damping=(2400, 180),
+        grip=1.05, air_torque=1400, thrust=(0, 0), boost=(3000, 230), fuel_rate=1.0,
+        hull=[(-2.05, -0.12), (-1.9, -0.36), (1.95, -0.36), (2.1, -0.1), (1.9, 0.3), (0.9, 0.42),
+              (0.2, 0.86), (-0.9, 0.84), (-1.7, 0.5), (-2.05, 0.3)],
+        head=(-0.25, 0.58), head_r=0.27, exhaust=(-2.0, -0.2), nozzle=(-2.1, 0.05),
+        engine=(1.4, 0.2), lights=[(2.04, 0.18)], tail=[(-2.06, 0.26)],
+        rig="strut", sound="tesla", head_art="helmet", wheel_art=("aero", "aero"), head_behind=True,
+    ),
+    dict(
+        key="mini", name="Mini One", tagline="Small, quick and cheeky",
+        mass=160, inertia=110, rest=0.26, ext=(0.11, 0.38),
+        wheels=[(-0.98, -0.06, 0.3, 16, 0.3), (1.0, -0.06, 0.3, 16, 0.7)],
+        torque=(520, 70), spin=(46, 4.0), spring=(15000, 1200), damping=(1300, 110),
+        grip=1.0, air_torque=900, thrust=(0, 0), boost=(2000, 160), fuel_rate=0.9,
+        hull=[(-1.45, -0.1), (-1.38, -0.3), (1.42, -0.3), (1.5, -0.08), (1.42, 0.3), (0.72, 0.42),
+              (0.45, 0.95), (-1.1, 0.95), (-1.42, 0.42)],
+        head=(-0.25, 0.62), head_r=0.27, exhaust=(-1.45, -0.24), nozzle=(-1.5, 0.05),
+        engine=(1.0, 0.2), lights=[(1.46, 0.16)], tail=[(-1.47, 0.22)],
+        rig="strut", sound="mini", head_art="helmet", wheel_art=("mini", "mini"), head_behind=True,
+    ),
+    dict(
+        key="b2", name="B2 Bomber", tagline="Why drive? Fly!",
+        mass=190, inertia=260, rest=0.34, ext=(0.12, 0.5),
+        wheels=[(-0.95, -0.12, 0.27, 12, 1.0), (1.05, -0.12, 0.27, 12, 0.0)],
+        torque=(260, 30), spin=(45, 4.0), spring=(12000, 900), damping=(1200, 100),
+        grip=0.9, air_torque=1150, thrust=(1250, 130), boost=(3400, 240), fuel_rate=1.25,
+        hull=[(2.3, 0.05), (1.4, 0.36), (0.4, 0.62), (-0.6, 0.42), (-2.1, 0.1), (-2.2, -0.1), (-1.0, -0.18),
+              (1.0, -0.18), (2.2, -0.05)],
+        head=(0.62, 0.42), head_r=0.2, exhaust=(-2.1, 0.12), nozzle=(-2.15, 0.12),
+        engine=(-1.6, 0.1), lights=[(2.25, 0.02)], tail=[],
+        rig="gear", sound="jet", head_art="astro", wheel_art=("aero", "aero"), head_behind=True,
+    ),
+    dict(
+        key="excavator", name="Excavator", tagline="Digs in, never gives up",
+        mass=620, inertia=700, rest=0.3, ext=(0.12, 0.42),
+        wheels=[(-1.05, -0.32, 0.4, 62, 0.5), (1.05, -0.32, 0.4, 62, 0.5)],
+        torque=(2900, 320), spin=(17, 1.6), spring=(52000, 3600), damping=(6200, 450),
+        grip=1.25, air_torque=3700, thrust=(0, 0), boost=(6200, 450), fuel_rate=1.3,
+        hull=[(-1.7, -0.2), (1.7, -0.2), (1.6, 0.35), (-1.6, 0.35), (-1.4, 1.75), (0.2, 1.75), (0.6, 0.9),
+              (1.7, 1.9), (2.7, 1.2), (2.85, 0.45), (2.3, 0.4)],
+        head=(-0.45, 1.25), head_r=0.27, exhaust=(-1.2, 1.9), nozzle=(-1.75, 0.5),
+        engine=(-1.2, 0.8), lights=[(0.25, 1.55)], tail=[(-1.65, 0.6)],
+        rig="tank", sound="excavator", head_art="hardhat", wheel_art=("sprocket", "sprocket"), head_behind=True,
+    ),
+    dict(
+        key="lkw", name="LKW", tagline="Big, heavy, unstoppable",
+        mass=680, inertia=950, rest=0.4, ext=(0.15, 0.6),
+        wheels=[(-1.6, -0.32, 0.55, 62, 0.6), (1.75, -0.32, 0.55, 62, 0.4)],
+        torque=(3100, 340), spin=(22, 2.0), spring=(54000, 3800), damping=(6400, 460),
+        grip=1.1, air_torque=3900, thrust=(0, 0), boost=(6800, 480), fuel_rate=1.4,
+        hull=[(-2.55, -0.15), (2.55, -0.15), (2.6, 0.5), (2.45, 1.55), (1.1, 1.62), (1.0, 2.0), (-2.55, 2.0)],
+        head=(1.65, 1.08), head_r=0.27, exhaust=(0.95, 2.15), nozzle=(-2.6, 0.4),
+        engine=(1.8, 0.5), lights=[(2.6, 0.35)], tail=[(-2.58, 0.25)],
+        rig="strut", sound="lkw", head_art="helmet", wheel_art=("truck", "truck"), head_behind=True,
+    ),
+    dict(
+        key="horse", name="Horse", tagline="Gallops over every hill",
+        mass=300, inertia=280, rest=0.86, ext=(0.62, 1.04),
+        wheels=[(-0.72, -0.18, 0.28, 30, 0.5), (0.78, -0.18, 0.28, 30, 0.5)],
+        torque=(950, 105), spin=(32, 2.8), spring=(17000, 1300), damping=(1700, 140),
+        grip=1.15, air_torque=1250, thrust=(0, 0), boost=(2700, 210), fuel_rate=1.0,
+        hull=[(-1.15, 0.05), (-0.9, -0.3), (0.9, -0.3), (1.2, 0.2), (1.55, 0.95), (1.85, 0.75), (-1.2, 0.5),
+              (-0.2, 0.75)],
+        head=(-0.12, 1.5), head_r=0.24, exhaust=(-1.2, 0.2), nozzle=(-1.25, 0.25),
+        engine=(0.0, 0.2), lights=[(1.85, 0.8)], tail=[(-1.2, 0.3)],
+        rig="horse", sound="horse", head_art="helmet", wheel_art=("none", "none"),
+    ),
 ]
 VEHICLE_BY_KEY = {v["key"]: v for v in VEHICLES}
+
+
+def season_at(stage, x):
+    """On the Four Seasons stage: (season index, next index, blend 0..1) at distance x, else None."""
+    seasons = stage.get("seasons")
+    if not seasons:
+        return None
+    pos = max(0.0, x) / SEASON_LENGTH
+    i = int(pos) % len(seasons)
+    into = (pos - int(pos)) * SEASON_LENGTH
+    blend = max(0.0, (into - (SEASON_LENGTH - SEASON_BLEND)) / SEASON_BLEND)
+    return i, (i + 1) % len(seasons), blend
 
 # --------------------------------------------------------------- upgrades
 UPGRADES = [

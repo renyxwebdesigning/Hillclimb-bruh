@@ -138,7 +138,7 @@ class Face:
     def base(self, flush=0.0, form=1.0):
         a, skin = self.a, self.skin
         # a thin dark rim keeps the head readable when it is tiny in the vehicle
-        a.fill(gfx.shade(self.skin, 0.55), [(x * 1.022, y * 1.016 + (0.006 if y > 0 else -0.006)) for x, y in self.pts])
+        a.fill(gfx.shade(self.skin, 0.68), [(x * 1.018, y * 1.012 + (0.005 if y > 0 else -0.005)) for x, y in self.pts])
         a.fill(skin, self.pts)
         dark = gfx.mix(gfx.shade(skin, 0.74), (130, 58, 48), 0.3)          # shadows on skin are warm, not grey
         deep = gfx.mix(gfx.shade(skin, 0.6), (110, 46, 40), 0.3)
@@ -166,6 +166,25 @@ class Face:
                     a.ell(rgba(red, int(120 * flush)), sd * 0.5, -0.26, 0.42, 0.3, l)
                 a.ell(rgba(red, int(70 * flush)), 0.0, -0.18, 0.2, 0.2, l)
             a.soft(cheeks, 0.12, self.clip)
+        self.texture()
+
+    def texture(self, amount=1.0):
+        """Real skin is never flat: soft blotches of colour, then fine pores and freckle-sized specks."""
+        a, skin, rng = self.a, self.skin, self.rng
+        warm, cool = gfx.mix(skin, (200, 90, 80), 0.4), gfx.mix(skin, (150, 150, 170), 0.3)
+
+        def blotches(l):
+            for _ in range(26):
+                a.ell(rgba(warm if rng.random() < 0.6 else cool, int(rng.uniform(14, 34) * amount)),
+                      rng.uniform(-0.8, 0.8), rng.uniform(-1.0, 0.9), rng.uniform(0.12, 0.32), rng.uniform(0.1, 0.26), l)
+        a.soft(blotches, 0.06, self.clip)
+        lay = a.layer()
+        dark, light = gfx.shade(skin, 0.78), gfx.mix(skin, (255, 255, 255), 0.35)
+        for _ in range(int(900 * amount)):
+            x, y = rng.uniform(-0.9, 0.9), rng.uniform(-1.1, 1.0)
+            a.ell(rgba(dark if rng.random() < 0.6 else light, rng.randint(10, 32)), x, y, 0.012, 0.012, lay)
+        lay.blit(self.clip, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        a.s.blit(lay, (0, 0))
 
     def ears(self, y=0.02, size=1.0, x=0.86, back=False):
         a, skin = self.a, self.skin
@@ -190,6 +209,7 @@ class Face:
             liner=1.0, white=(244, 240, 236), crease=1.0):
         a, skin = self.a, self.skin
         sd = 1 if x > 0 else -1
+        w, h = w * 1.08, h * 1.22                       # real eyes are rounder than cartoon slits
         # eye socket shadow and the crease of the upper lid
         sock = gfx.shade(skin, 0.68)
         a.soft(lambda l: a.ell(rgba(sock, int(50 * socket)), x + sd * 0.02, y + 0.05, w * 1.5, h * 2.4, l), 0.09, self.clip)
@@ -209,24 +229,41 @@ class Face:
         a.fill(white, almond, surf=lay)
         r = h * 0.56
         ix, iy = x + look, y - h * 0.02
-        a.ell(gfx.shade(iris, 0.55), ix, iy, r * 2.1, r * 2.1, lay)
+        a.ell(gfx.shade(iris, 0.42), ix, iy, r * 2.1, r * 2.1, lay)                     # dark limbal ring
         a.ell(iris, ix, iy, r * 1.86, r * 1.86, lay)
         a.ell(gfx.mix(iris, (255, 255, 255), 0.35), ix - r * 0.1, iy - r * 0.38, r * 1.1, r * 0.8, lay)
-        a.ell((16, 14, 16), ix, iy, r * 0.82, r * 0.82, lay)
+        for k in range(28):                                                              # iris fibres
+            ang = k * math.tau / 28 + self.rng.uniform(-0.05, 0.05)
+            c = gfx.shade(iris, 0.6) if k % 2 else gfx.mix(iris, (255, 255, 255), 0.45)
+            a.line(rgba(c, 120), [(ix + math.cos(ang) * r * 0.45, iy + math.sin(ang) * r * 0.45),
+                                  (ix + math.cos(ang) * r * 0.9, iy + math.sin(ang) * r * 0.9)], 0.006,
+                   smooth=False, surf=lay)
+        a.ell(gfx.shade(iris, 0.3), ix, iy, r * 0.98, r * 0.98, lay)
+        a.ell((12, 10, 12), ix, iy, r * 0.8, r * 0.8, lay)
         # upper lid casts a shadow on the eyeball, and may hang over the iris
         a.ell(rgba((60, 40, 36), 90), x, y + h * 0.42, w * 1.1, h * 0.6, lay)
         if lid:
             a.fill(gfx.shade(skin, 0.9), [(x - w, y + h), (x + w, y + h), (x + w, y + top - h * lid),
                                           (x - w, y + top - h * lid)], smooth=False, surf=lay)
         a.ell((255, 255, 255), ix + r * 0.32, iy + r * 0.34, r * 0.42, r * 0.42, lay)
+        a.ell((255, 255, 255, 170), ix - r * 0.35, iy - r * 0.3, r * 0.16, r * 0.16, lay)           # second catchlight
         lay.blit(clip, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         a.s.blit(lay, (0, 0))
         lid_y = top - h * lid
         upper = [(x - w / 2, y - h * 0.02), (x - w * 0.22, y + lid_y), (x + w * 0.2, y + lid_y * 1.02),
                  (x + w / 2, y + h * 0.08)]
-        a.taper((28, 20, 20), upper, 0.03 * liner + lashes * 0.02, 0.05 * liner + lashes * 0.03)
+        lid_col = (52, 34, 30) if not lashes else (24, 16, 16)
+        a.taper(lid_col, upper, 0.016 * liner + lashes * 0.02, 0.03 * liner + lashes * 0.03)
+        a.soft(lambda l: a.taper(rgba(gfx.shade(skin, 0.55), 120), upper, 0.05, 0.06, surf=l), 0.02, self.clip)
         a.line(rgba(gfx.shade(skin, 0.6), 160), [(x - w * 0.42, y - h * 0.18), (x, y - h * 0.5),
                                                  (x + w * 0.46, y - h * 0.08)], 0.016)
+        a.line(rgba((220, 140, 140), 120), [(x - w * 0.36, y - h * 0.3), (x, y - h * 0.42), (x + w * 0.38, y - h * 0.24)],
+               0.012)                                                                   # wet lower lid line
+        for i in range(9):                                                              # fine natural lashes
+            tt = 0.12 + i * 0.1
+            px = x - w / 2 + w * tt
+            py = y + lid_y * (1 - abs(tt - 0.45) * 0.9)
+            a.taper(rgba((30, 22, 20), 160), [(px, py), (px + 0.012 + 0.02 * tt, py + 0.03)], 0.008, 0.002)
         if lashes:
             for i in range(5):
                 t = 0.35 + i * 0.15
@@ -243,7 +280,7 @@ class Face:
         a.soft(lambda l: a.taper(rgba(col, 120), [inner, mid, outer], thick * 1.4, thick * 0.6, surf=l), 0.02,
                self.clip)
         rng = self.rng
-        for i in range(hairs):
+        for i in range(int(hairs * 1.7)):
             t = rng.random()
             px = inner[0] + (outer[0] - inner[0]) * t
             py = inner[1] + (outer[1] - inner[1]) * t + arch * (1 - (2 * t - 1) ** 2) + rng.uniform(-0.4, 0.4) * thick
@@ -251,7 +288,7 @@ class Face:
             ang = (0.25 + 0.9 * t) * sd + rng.uniform(-0.2, 0.2)
             c = gfx.shade(col, rng.uniform(0.75, 1.25))
             a.taper(c, [(px, py - ln * 0.4), (px + math.sin(ang) * ln, py + math.cos(ang) * ln * 0.5)],
-                    0.016 + 0.01 * bushy, 0.004)
+                    0.011 + 0.01 * bushy, 0.002)
 
     def nose(self, y=-0.24, w=0.2, length=0.5, bridge=0.06, tip=1.0):
         a, skin = self.a, self.skin
@@ -271,10 +308,18 @@ class Face:
                     0.035, 0.06, surf=l)
             a.ell(rgba(light, int(170 * tip)), -0.02, y + 0.05, w * 0.6, w * 0.45, l)
         a.soft(hi, 0.035, self.clip)
+        def form(l):
+            for sd in (-1, 1):
+                a.ell(rgba(gfx.shade(skin, 0.7), 110 if sd > 0 else 70), sd * w * 0.62, y - 0.02, w * 0.55, w * 0.55, l)
+            a.ell(rgba(gfx.shade(skin, 0.68), 120), 0.0, y - 0.09, w * 0.7, w * 0.28, l)     # under the tip
+        a.soft(form, 0.03, self.clip)
+        a.soft(lambda l: a.ell(rgba(gfx.mix(skin, (255, 240, 230), 0.55), 160), -0.03, y + 0.03, w * 0.75, w * 0.6, l),
+               0.025, self.clip)                                                          # the round tip
         for sd in (-1, 1):
-            a.ell(rgba((70, 34, 30), 200), sd * w * 0.36, y - 0.07, w * 0.36, w * 0.17, angle=-sd * 15)
-            a.line(rgba(gfx.shade(skin, 0.58), 170), [(sd * w * 0.55, y + 0.06), (sd * w * 0.68, y - 0.02),
-                                                     (sd * w * 0.5, y - 0.08)], 0.018)
+            a.soft(lambda l, sd=sd: a.ell(rgba((90, 44, 38), 170), sd * w * 0.34, y - 0.075, w * 0.34, w * 0.15, l,
+                                          angle=-sd * 15), 0.012, self.clip)
+            a.line(rgba(gfx.shade(skin, 0.6), 120), [(sd * w * 0.56, y + 0.07), (sd * w * 0.7, y - 0.01),
+                                                     (sd * w * 0.52, y - 0.08)], 0.014)
 
     def mouth(self, y=-0.56, w=0.42, lip=(196, 110, 104), smile=0.0, open_=0.0, teeth=True, upper=0.06, lower=0.08,
               thin=1.0, frown=0.0):
@@ -284,7 +329,8 @@ class Face:
         corner_l, corner_r = (-w / 2, y + curve), (w / 2, y + curve)
         # philtrum and the shadow under the lower lip
         a.soft(lambda l: (a.ell(rgba(gfx.shade(skin, 0.75), 90), 0.0, y + upper + 0.08, 0.1, 0.14, l),
-                          a.ell(rgba(gfx.shade(skin, 0.66), 150), 0.0, y - lower - 0.1, w * 0.7, 0.12, l)), 0.04,
+                          a.ell(rgba(gfx.mix(gfx.shade(skin, 0.72), (140, 70, 60), 0.3), 80), 0.0, y - lower - 0.1,
+                                w * 0.6, 0.1, l)), 0.05,
                self.clip)
         if open_:
             hole = [corner_l, (-w * 0.22, cy + 0.01), (w * 0.22, cy + 0.01), corner_r, (w * 0.25, cy - open_),
@@ -313,6 +359,10 @@ class Face:
             a.soft(lambda l: a.ell(rgba(gfx.mix(lip, (255, 255, 255), 0.5), 150), -0.03, cy - lower * thin * 0.55,
                                    w * 0.36, lower * thin * 0.5, l), 0.02, self.clip)
             a.taper((70, 30, 30), [corner_l, (-w * 0.2, cy - 0.005), (w * 0.2, cy - 0.005), corner_r], 0.02, 0.02)
+            for i in range(-5, 6):                                                     # lip texture
+                lx = i * w * 0.07
+                a.line(rgba(gfx.shade(lip, 0.75), 70), [(lx, cy - 0.01), (lx * 1.02, cy - lower * thin * 0.8)], 0.006,
+                       smooth=False)
         for c in (corner_l, corner_r):
             a.soft(lambda l, c=c: a.ell(rgba(gfx.shade(skin, 0.6), 150), c[0], c[1], 0.07, 0.07, l), 0.02, self.clip)
 
@@ -390,18 +440,31 @@ class Face:
         xs = [p[0] for p in outer + hairline]
         ys = [p[1] for p in outer + hairline]
         flow = flow or (lambda x, y: 0.0)
-        for _ in range(strands):
+        for _ in range(int(strands * 1.8)):
             x, y = rng.uniform(min(xs), max(xs)), rng.uniform(min(ys), max(ys))
-            ln = rng.uniform(*length)
-            ang = flow(x, y) + rng.uniform(-0.12, 0.12)
-            bend = rng.uniform(-0.08, 0.08)
+            ln = rng.uniform(*length) * 1.3
+            ang = flow(x, y) + rng.uniform(-0.06, 0.06)
+            bend = rng.uniform(-0.04, 0.04)
             pts2 = [(x, y), (x + math.sin(ang) * ln * 0.5 + bend, y - math.cos(ang) * ln * 0.5),
                     (x + math.sin(ang) * ln, y - math.cos(ang) * ln)]
-            tone = rng.random()
-            c = gfx.mix(dark, light, tone) if tone > 0.15 else gfx.shade(dark, 0.8)
-            a.taper(rgba(c, rng.randint(150, 240)), pts2, width * rng.uniform(0.6, 1.4), 0.003, surf=lay)
+            tone = 0.25 + 0.55 * rng.random()
+            c = gfx.mix(dark, light, tone)
+            a.taper(rgba(c, rng.randint(80, 170)), pts2, width * rng.uniform(0.4, 0.8), 0.002, surf=lay)
+        sheen = a.layer()                                   # a soft band of shine across the top
+        a.ell(rgba(light, 90), LIGHT[0] * 0.5, max(ys) - 0.18, 1.1, 0.18, sheen)
+        lay.blit(blur(sheen, 0.06 * a.R), (0, 0))
         lay.blit(mass, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         a.s.blit(lay, (0, 0))
+        # a few loose hairs sticking out past the outline, like real hair
+        fly = a.layer()
+        for i in range(18):
+            px, py = outer[rng.randrange(1, len(outer) - 1)]
+            ang = math.atan2(px, py - 0.2) + rng.uniform(-0.5, 0.5)
+            ln = rng.uniform(0.06, 0.16)
+            a.line(rgba(gfx.mix(col, light, rng.random()), rng.randint(90, 170)),
+                   [(px * 0.97, py * 0.97), (px + math.sin(ang) * ln, py + math.cos(ang) * ln)], 0.006, smooth=False,
+                   surf=fly)
+        a.s.blit(fly, (0, 0))
 
     def glasses(self, y, w, h, rim, gap=0.12, thick=0.035, rimless=False, round_=0.35, temple_y=0.05):
         a = self.a
@@ -675,11 +738,21 @@ def greta(a):
     for i in range(9):
         y = 0.1 - i * 0.24
         x = 0.82 + 0.04 * math.sin(i * 0.8)
+        w = 0.13 - i * 0.006                                # the braid gets thinner towards the end
         for sd in (-1, 1):
-            lock = [(x - 0.12, y + 0.1), (x + sd * 0.02, y + 0.14), (x + 0.13, y + 0.02), (x + sd * 0.02, y - 0.12),
-                    (x - 0.1, y - 0.06)]
-            a.fill(gfx.shade(hair, 0.7), [(px + 0.01, py - 0.015) for px, py in lock])
-            a.fill(gfx.mix(hair, light, 0.4 if sd > 0 else 0.1), lock)
+            # one twisted lock: dark edge, lit middle, a few fine hairs following the twist
+            lock = [(x - w, y + 0.1), (x + sd * 0.03, y + 0.15), (x + w, y + 0.02), (x - sd * 0.02, y - 0.12),
+                    (x - w * 0.8, y - 0.04)]
+            a.fill(gfx.shade(dark, 0.8), [(px + 0.012, py - 0.015) for px, py in lock])
+            a.fill(gfx.mix(hair, light, 0.35 if sd > 0 else 0.1), lock)
+            lay = a.layer()
+            for k in range(6):
+                f = (k + 0.5) / 6
+                a.line(rgba(gfx.mix(dark, light, 0.2 + 0.6 * f), 150),
+                       [(x - w + 2 * w * f * 0.4, y + 0.1 - 0.02 * f), (x - w * 0.2 + 2 * w * f * 0.5, y + 0.02),
+                        (x + w * (f - 0.2), y - 0.1 + 0.03 * f)], 0.008, surf=lay)
+            lay.blit(a.mask(lock), (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            a.s.blit(lay, (0, 0))
     a.ell((236, 200, 70), 0.86, -2.0, 0.12, 0.1)
 
 

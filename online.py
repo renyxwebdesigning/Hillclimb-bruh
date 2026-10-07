@@ -148,6 +148,8 @@ class Session:
         self.players = {int(k): v for k, v in players.items()}
         for k, v in self.players.items():
             v["color"] = tuple(v["color"])
+            if v.get("vehicle") not in VEHICLE_BY_KEY:          # e.g. a vehicle an older version still has
+                v["vehicle"] = "jeep"
         for k in list(self.remote):
             if k not in self.players:
                 del self.remote[k]
@@ -158,7 +160,7 @@ class Session:
             return None
         car = self.remote.get(pid)
         if car is None or car.spec["key"] != p["vehicle"]:
-            car = self.remote[pid] = RemoteCar(VEHICLE_BY_KEY[p["vehicle"]])
+            car = self.remote[pid] = RemoteCar(VEHICLE_BY_KEY.get(p["vehicle"], VEHICLE_BY_KEY["jeep"]))
         return car
 
     @property

@@ -4,7 +4,8 @@ import math
 import pygame
 
 import gfx
-from config import RACE_DISTANCES, STAGES, TITLE, UPGRADES, VEHICLES, rating, upgrade_cost, vehicle_stats
+import lang
+from config import RACE_DISTANCES, STAGES, TITLE, UPGRADES, VEHICLES, upgrade_cost, vehicle_stats
 from drivers import DRIVERS
 from gfx import s, si
 from physics import rest_wheel_offsets
@@ -335,6 +336,23 @@ def upgrade_icon(key, size):
 
 def scene(stage, w, h, radius=12):
     """Little stage landscape used behind vehicle pictures."""
+    if stage.get("seasons"):
+        # Four Seasons: one band per season, winter to fall
+        seasons = stage["seasons"]
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        band = w / len(seasons)
+        for i, sn in enumerate(seasons):
+            look = dict(stage, **{k: sn[k] for k in ("sky", "far", "ground", "pebble", "pebble_hi", "top", "top_hi",
+                                                     "top_lo")})
+            look.pop("seasons")
+            part, gy = scene(look, w, h, 0)
+            surf.blit(part, (i * band, 0), pygame.Rect(i * band, 0, band + 1, h))
+        if radius:
+            mask = pygame.Surface((w, h), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_top_left_radius=si(radius),
+                             border_top_right_radius=si(radius))
+            surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        return surf, gy
     surf = gfx.vgradient(w, h, *stage["sky"]).convert_alpha()
     far, near = stage["far"]
     seed = stage["seed"]
@@ -379,7 +397,8 @@ class Setup:
     TITLES = {"stage": "MAP", "vehicle": "VEHICLE", "driver": "DRIVER"}
     STAGE_INFO = {"countryside": "Rolling hills · day & night", "desert": "Huge dunes · day & night",
                   "arctic": "Slippery ice · day & night", "moon": "Low gravity", "city": "Skyscrapers · night lights",
-                  "volcano": "Jump the lava pits!", "jungle": "Rain, rivers & palms", "mars": "Red dust · very low gravity"}
+                  "volcano": "Jump the lava pits!", "jungle": "Rain, rivers & palms", "mars": "Red dust · very low gravity",
+                  "seasons": "Winter, spring, summer & fall"}
 
     def __init__(self, app):
         self.app = app
@@ -579,12 +598,12 @@ class Setup:
 
 
 class StageSelect:
-    CARD_W, CARD_H, PREVIEW_H = 270, 222, 142
+    CARD_W, CARD_H, PREVIEW_H, COLS = 228, 214, 134, 5
 
     def __init__(self, app):
         self.app = app
         self.bg = background(gfx.W, gfx.H)
-        cols, gap = 4, 22
+        cols, gap = self.COLS, 18
         x0 = gfx.W / 2 - s(cols * self.CARD_W + (cols - 1) * gap) / 2
         self.rects = [pygame.Rect(x0 + s((i % cols) * (self.CARD_W + gap)), s(92 + (i // cols) * (self.CARD_H + 20)),
                                   s(self.CARD_W), s(self.CARD_H)) for i in range(len(STAGES))]
@@ -604,8 +623,9 @@ class StageSelect:
         keys = [st["key"] for st in STAGES]
         if ev.type == pygame.KEYDOWN:
             i = keys.index(app.data["stage"])
+            c = self.COLS
             moves = {pygame.K_RIGHT: 1, pygame.K_d: 1, pygame.K_LEFT: -1, pygame.K_a: -1,
-                     pygame.K_DOWN: 4, pygame.K_s: 4, pygame.K_UP: -4, pygame.K_w: -4}
+                     pygame.K_DOWN: c, pygame.K_s: c, pygame.K_UP: -c, pygame.K_w: -c}
             if ev.key in moves:
                 self.select(STAGES[max(0, min(len(STAGES) - 1, i + moves[ev.key]))])
             elif ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
@@ -653,11 +673,10 @@ class StageSelect:
                 br = badge.get_rect(topright=(r.right - s(10), r.y + s(10))).inflate(s(14), s(6))
                 pygame.draw.rect(surf, (20, 22, 26), br, border_radius=br.h // 2)
                 surf.blit(badge, badge.get_rect(center=br.center))
-            extra = {"arctic": "Slippery ice · day & night", "moon": "Low gravity", "desert": "Huge dunes · day & night",
-                     "city": "Skyscrapers · night lights", "volcano": "Jump the lava pits!",
-                     "jungle": "Rain, rivers & palms", "mars": "Red dust · very low gravity"}.get(
-                st["key"], "Rolling hills · day & night")
-            gfx.blit_text(surf, "cond_i", 16, extra, (130, 200, 255), (r.x + s(14), r.y + ph + s(46)))
+            extra = gfx.text("cond_i", 15, Setup.STAGE_INFO.get(st["key"], ""), (130, 200, 255))
+            if extra.get_width() > r.w - s(24):
+                extra = pygame.transform.smoothscale_by(extra, (r.w - s(24)) / extra.get_width())
+            surf.blit(extra, (r.x + s(14), r.y + ph + s(46)))
         gfx.blit_text(surf, "cond", 18, "Pick a map  ·  tap it again (or press Enter) when you're done",
                       HINT, (gfx.W / 2, s(580)), "center")
         pressed = pygame.mouse.get_pressed()[0]
@@ -667,17 +686,17 @@ class StageSelect:
 
 
 class VehicleSelect:
-    CARD_W, CARD_H, PREVIEW_H = 380, 158, 92
+    CARD_W, CARD_H, PREVIEW_H, COLS = 232, 156, 98, 5
 
     def __init__(self, app):
         self.app = app
         self.bg = background(gfx.W, gfx.H)
-        gap = 20
-        x0 = gfx.W / 2 - s(3 * self.CARD_W + 2 * gap) / 2
+        gap, cols = 16, self.COLS
+        x0 = gfx.W / 2 - s(cols * self.CARD_W + (cols - 1) * gap) / 2
         self.rects = []
         for i in range(len(VEHICLES)):
-            col, row = i % 3, i // 3
-            self.rects.append(pygame.Rect(x0 + s(col * (self.CARD_W + gap)), s(84 + row * (self.CARD_H + 14)),
+            col, row = i % cols, i // cols
+            self.rects.append(pygame.Rect(x0 + s(col * (self.CARD_W + gap)), s(86 + row * (self.CARD_H + 14)),
                                           s(self.CARD_W), s(self.CARD_H)))
         self.previews = {}
         self.back_btn = Button("BACK", (s(170), gfx.H - s(56)), (230, 64), "gray")
@@ -700,8 +719,9 @@ class VehicleSelect:
         keys = [v["key"] for v in VEHICLES]
         if ev.type == pygame.KEYDOWN:
             i = keys.index(app.data["vehicle"])
+            c = self.COLS
             moves = {pygame.K_RIGHT: 1, pygame.K_d: 1, pygame.K_LEFT: -1, pygame.K_a: -1,
-                     pygame.K_DOWN: 3, pygame.K_s: 3, pygame.K_UP: -3, pygame.K_w: -3}
+                     pygame.K_DOWN: c, pygame.K_s: c, pygame.K_UP: -c, pygame.K_w: -c}
             if ev.key in moves:
                 self.select(VEHICLES[max(0, min(len(VEHICLES) - 1, i + moves[ev.key]))])
             elif ev.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE, pygame.K_BACKSPACE):
@@ -731,26 +751,15 @@ class VehicleSelect:
             glass(surf, r, 14, selected, hover)
             surf.blit(self.preview(spec, r), r.topleft)
             ph = s(self.PREVIEW_H)
-            name = gfx.text("cond", 24, spec["name"].upper(), WHITE)
-            tag = gfx.text("cond_i", 15, spec["tagline"], MUTED)
-            room = s(168)
-            for img, y in ((name, s(4)), (tag, s(34))):
+            room = r.w - s(24)
+            for img, y in ((gfx.text("black_i", 22, spec["name"].upper(), WHITE, outline=NAVY, width=2), s(6)),
+                           (gfx.text("cond_i", 15, spec["tagline"], MUTED), s(34))):
                 if img.get_width() > room:
                     img = pygame.transform.smoothscale_by(img, room / img.get_width())
-                surf.blit(img, (r.x + s(16), r.y + ph + y))
+                surf.blit(img, (r.x + s(12), r.y + ph + y))
             lv = sum(app.data["levels"][spec["key"]].values()) - len(UPGRADES)
             if lv:
                 gfx.blit_text(surf, "cond", 14, f"{lv} upgrades", GOLD, (r.right - s(12), r.y + s(8)), "topright")
-            stats = rating(spec)
-            bx, by = r.x + s(206), r.y + ph + s(2)
-            for i, (name, val) in enumerate(stats.items()):
-                y = by + i * s(15)
-                gfx.blit_text(surf, "cond", 13, name, MUTED, (bx, y + s(5)), "midleft")
-                bar = pygame.Rect(bx + s(52), y, s(110), s(10))
-                pygame.draw.rect(surf, (64, 66, 72), bar, border_radius=si(4))
-                fill = bar.copy()
-                fill.w = max(si(4), int(bar.w * val))
-                pygame.draw.rect(surf, gfx.mix((90, 200, 60), (255, 190, 40), 1 - val), fill, border_radius=si(4))
         gfx.blit_text(surf, "cond", 18, "Every vehicle is free  ·  tap it again (or press Enter) when you're done",
                       HINT, (gfx.W / 2, s(608)), "center")
         pressed = pygame.mouse.get_pressed()[0]
@@ -1158,12 +1167,12 @@ class OnScreenKeyboard:
 
     def _layout(self):
         numeric = self.target.numeric
-        h = s(300) if numeric else s(330)
+        h = s(400) if numeric else s(330)
         self.panel = pygame.Rect(0, gfx.H - h, gfx.W, h)
         keys = []
         top = self.panel.y + s(72)
         if numeric:
-            kw, kh, gap = s(150), s(50), s(10)
+            kw, kh, gap = s(240), s(66), s(12)          # big thumb-sized keys
             x0 = gfx.W / 2 - (3 * kw + 2 * gap) / 2
             rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["DEL", "0", "OK"]]
             for r, row in enumerate(rows):
@@ -1249,7 +1258,7 @@ class OnScreenKeyboard:
             pygame.draw.rect(surf, face, rr, border_radius=si(10))
             label = {"DEL": "DELETE" if t.numeric else "DEL", "SPACE": "space"}.get(k, k)
             col = WHITE if special else NAVY
-            img = gfx.text("black_i" if special else "heavy", 24, label, col)
+            img = gfx.text("black_i" if special else "heavy", 34 if t.numeric else 24, label, col)
             if img.get_width() > rr.w - s(8):
                 img = pygame.transform.smoothscale_by(img, (rr.w - s(8)) / img.get_width())
             surf.blit(img, img.get_rect(center=rr.center))
@@ -1603,7 +1612,8 @@ class Lobby:
             me = " (you)" if pid == ses.my_id else ""
             host = "  ★" if pid == ses.host_id else ""
             gfx.blit_text(surf, "cond", 20, p["name"] + me + host, WHITE, (row.x + s(38), row.centery), "midleft")
-            info = f"{VEHICLE_BY_KEY[p['vehicle']]['name']} · {DRIVER_BY_KEY.get(p['driver'], DRIVERS[0])['name']}"
+            info = (f"{VEHICLE_BY_KEY.get(p['vehicle'], VEHICLES[0])['name']} · "
+                    f"{DRIVER_BY_KEY.get(p['driver'], DRIVERS[0])['name']}")
             gfx.blit_text(surf, "cond", 16, info, MUTED, (row.right - s(12), row.centery), "midright")
         st_name = next(st["name"] for st in STAGES if st["key"] == ses.settings["stage"])
         self.stage_sel.draw(surf, st_name.upper(), ses.is_host)
@@ -1767,6 +1777,7 @@ class Settings:
         self.gfx_sel = Selector("GRAPHICS", (cx, s(260)), 400)
         self.full_sel = Selector("FULLSCREEN", (cx, s(350)), 400)
         self.ghost_sel = Selector("GHOST OF YOUR BEST RUN", (cx, s(440)), 400)
+        self.lang_sel = Selector("LANGUAGE", (s(320), s(540)), 400)
         self.back_btn = Button("BACK", (s(170), gfx.H - s(56)), (230, 64), "gray")
         self.active = None
 
@@ -1811,6 +1822,12 @@ class Settings:
             if d:
                 app.data["ghosts"] = not app.data.get("ghosts", True)
                 app.persist()
+            d = self.lang_sel.hit(ev.pos)
+            if d:
+                codes = [c for c, _ in lang.LANGUAGES]
+                i = codes.index(app.data["lang"]) if app.data["lang"] in codes else 0
+                app.audio.play("click")
+                app.set_language(codes[(i + d) % len(codes)])
         elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
             if self.active:
                 self.active = None
@@ -1836,6 +1853,7 @@ class Settings:
         else:
             self.full_sel.draw(surf, "NOT ON THIS DEVICE", enabled=False)
         self.ghost_sel.draw(surf, "SHOW" if app.data.get("ghosts", True) else "HIDE")
+        self.lang_sel.draw(surf, dict(lang.LANGUAGES).get(app.data["lang"], "ENGLISH"))
         keys = pygame.Rect(0, 0, s(460), s(150))
         keys.midtop = (gfx.W / 2 + s(270), s(484))
         glass(surf, keys)

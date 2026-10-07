@@ -6,6 +6,7 @@ import random
 import pygame
 
 import gfx
+import lang
 import lighting
 import sprites
 from config import DAY_LENGTH, STAGES, TITLE, VEHICLE_BY_KEY, WEB
@@ -240,7 +241,7 @@ class HomeMenu:
         gfx.blit_text(surf, "black_i", 22, "DAILY CHALLENGE", GOLD, (card.x + s(18), card.y + s(10)), outline=NAVY, width=2)
         gfx.blit_text(surf, "heavy", 17, f"+{d['reward']:,}", WHITE, (card.right - s(44), card.y + s(14)), "topright")
         surf.blit(app.coin_icon_small, app.coin_icon_small.get_rect(midright=(card.right - s(16), card.y + s(25))))
-        words, lines, line = d["text"].split(), [], ""
+        words, lines, line = lang.tr(d["text"]).split(), [], ""   # translate first, then wrap
         for w in words:
             test = (line + " " + w).strip()
             if gfx.text("heavy", 18, test, WHITE).get_width() > card.w - s(36):

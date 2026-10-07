@@ -3,7 +3,7 @@
 World units are metres, seconds and kilograms; +y is up and angles are
 counter-clockwise. Contacts use stiff penalty springs; tyre grip uses a
 velocity-level friction impulse, which stays stable at any stiffness.
-Every vehicle (cars, bikes, the rocket) is the same model with different
+Every vehicle (cars, bikes, the B2 bomber, the horse) is the same model with different
 numbers, see config.VEHICLES.
 """
 import math

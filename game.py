@@ -2,7 +2,7 @@
 import math
 import random
 
-from config import BOOST_RECHARGE, FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, vehicle_stats
+from config import BOOST_RECHARGE, FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, season_at, vehicle_stats
 from physics import Vehicle
 from render import Camera, Particles
 
@@ -84,10 +84,20 @@ class Run:
             self.boost = min(1.0, self.boost + dt / BOOST_RECHARGE)
         self.audio.boost(self.boosting)
 
+        grip = st["grip"]
+        season = season_at(st, car.x)
+        if season is not None:                      # Four Seasons: icy winter, grippy summer
+            grip = st["seasons"][season[0]]["grip"]
+            if season[0] != getattr(self, "_season", None):
+                if getattr(self, "_season", None) is not None:
+                    name = st["seasons"][season[0]]["name"]
+                    self.hud.notice(name + "!", {"WINTER": (170, 220, 255), "SPRING": (255, 160, 200),
+                                                 "SUMMER": (255, 220, 60), "FALL": (240, 140, 40)}[name])
+                self._season = season[0]
         self._acc += dt
         steps = 0
         while self._acc >= PHYS_DT and steps < 50:
-            car.step(PHYS_DT, g, b, self.boosting, self.terrain, st["gravity"] * GRAVITY_SCALE, st["grip"])
+            car.step(PHYS_DT, g, b, self.boosting, self.terrain, st["gravity"] * GRAVITY_SCALE, grip)
             self._acc -= PHYS_DT
             steps += 1
             if not car.grounded:

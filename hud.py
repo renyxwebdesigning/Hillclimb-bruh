@@ -4,6 +4,7 @@ import math
 import pygame
 
 import gfx
+import lang
 import sprites
 from gfx import s, si
 
@@ -35,7 +36,7 @@ def _pedal(w, h, label, rows, cols):
                 pygame.draw.circle(surf, (250, 250, 252), (cx, cy + r * 0.12), r * 1.12)
                 pygame.draw.circle(surf, (44, 46, 50), (cx, cy), r)
                 pygame.draw.circle(surf, (78, 80, 86), (cx, cy - r * 0.15), r * 0.72)
-        t = gfx.font_px("cond", inner.h * 0.16).render(label, True, (52, 54, 60))
+        t = gfx.font_px("cond", inner.h * 0.16).render(lang.tr(label), True, (52, 54, 60))
         surf.blit(t, t.get_rect(center=(inner.centerx, inner.y + inner.h * 0.85)))
     return gfx.supersample(w, h, draw)
 
@@ -73,7 +74,7 @@ def _boost_button(r, lit):
                  (-0.18, 0.0), (-0.3, -0.1)]
         pygame.draw.polygon(surf, (255, 255, 255) if lit else (220, 224, 230),
                             [(c + x * R * 0.75, c - y * R * 0.75 - R * 0.08) for x, y in flame])
-        t = gfx.font_px("cond", R * 0.36).render("BOOST", True, (40, 30, 20) if lit else (40, 42, 48))
+        t = gfx.font_px("cond", R * 0.36).render(lang.tr("BOOST"), True, (40, 30, 20) if lit else (40, 42, 48))
         surf.blit(t, t.get_rect(center=(c, c + R * 0.62)))
     return gfx.supersample(2 * r + 2, 2 * r + 2, draw)
 
@@ -136,7 +137,7 @@ def _horn_button(r, kind):
             pygame.draw.circle(surf, ink, (c, c - R * 0.52), R * 0.12, w)
             pygame.draw.line(surf, ink, (c - R * 0.26, c - R * 0.22), (c + R * 0.26, c - R * 0.22), w)
             pygame.draw.arc(surf, ink, (c - R * 0.46, c - R * 0.1, R * 0.92, R * 0.6), math.pi * 1.05, math.pi * 1.95, w)
-        t = gfx.font_px("cond", R * 0.3).render("HORN", True, (40, 42, 48))
+        t = gfx.font_px("cond", R * 0.3).render(lang.tr("HORN"), True, (40, 42, 48))
         surf.blit(t, t.get_rect(center=(c, c + R * 0.66)))
     return gfx.supersample(2 * r + 2, 2 * r + 2, draw)
 
