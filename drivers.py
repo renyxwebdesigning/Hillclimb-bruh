@@ -38,201 +38,523 @@ DRIVERS = [
 ]
 DRIVER_BY_KEY = {d["key"]: d for d in DRIVERS}
 
-OUT = (40, 26, 22)
+OUT = (44, 28, 24)
+SIZE = 1.95          # sprite half-size in head radii (hair and collar stick out)
 
 
 def face(key, radius_px):
     """A head sprite for the driver; the head centre is the sprite centre."""
     if key == "lutz":
         return _photo(radius_px)
-    size = radius_px * 2 * 1.75
+    size = radius_px * 2 * SIZE
 
     def draw(surf, k):
-        c = surf.get_width() / 2
-        R = radius_px * k
-
-        def P(x, y):
-            return (c + x * R, c - y * R)
-
-        def ell(col, x, y, w, h, width=0):
-            r = pygame.Rect(0, 0, w * R, h * R)
-            r.center = P(x, y)
-            pygame.draw.ellipse(surf, col, r, width)
-
-        def poly(col, pts):
-            pygame.draw.polygon(surf, col, [P(*p) for p in pts])
-
-        def line(col, a, b, w):
-            pygame.draw.line(surf, col, P(*a), P(*b), max(1, int(w * R)))
-
-        def arc(col, x, y, w, h, a0, a1, width):
-            r = pygame.Rect(0, 0, w * R, h * R)
-            r.center = P(x, y)
-            pygame.draw.arc(surf, col, r, a0, a1, max(1, int(width * R)))
-
-        DRAW[key](ell, poly, line, arc, P, R, surf)
+        DRAW[key](Painter(surf, radius_px * k))
     return gfx.supersample(size, size, draw)
 
 
-def _base(ell, line, arc, skin, brow=(90, 60, 40), eye=(50, 40, 30), mouth="smile", face_w=1.84, face_h=2.0,
-          blush=True, eyes_open=0.36):
-    ell(gfx.shade(skin, 0.8), -0.93, 0.0, 0.34, 0.44)
-    ell(gfx.shade(skin, 0.8), 0.93, 0.0, 0.34, 0.44)
-    ell(OUT, 0, 0, face_w + 0.08, face_h + 0.08)
-    ell(skin, 0, 0, face_w, face_h)
-    ell(gfx.shade(skin, 1.08), -0.15, 0.25, face_w * 0.6, face_h * 0.5)
-    for x in (-0.36, 0.36):
-        ell((255, 255, 255), x, 0.14, 0.34, eyes_open)
-        ell(eye, x + 0.06, 0.12, 0.15, min(0.17, eyes_open * 0.5))
-        ell((255, 255, 255), x + 0.09, 0.16, 0.05, 0.05)
-        line(brow, (x - 0.17, 0.42), (x + 0.17, 0.44), 0.08)
-    ell(gfx.shade(skin, 0.86), 0.05, -0.16, 0.22, 0.26)
-    if blush:
-        ell(gfx.mix(skin, (240, 120, 120), 0.35), -0.55, -0.25, 0.32, 0.2)
-        ell(gfx.mix(skin, (240, 120, 120), 0.35), 0.62, -0.25, 0.32, 0.2)
-    if mouth == "smile":
-        arc((120, 40, 40), 0.03, -0.42, 0.7, 0.42, math.pi * 1.1, math.pi * 1.9, 0.07)
-    elif mouth == "grin":
-        ell((120, 30, 30), 0.03, -0.5, 0.82, 0.26)
-        ell((255, 255, 255), 0.03, -0.45, 0.68, 0.11)
-    elif mouth == "flat":
-        line((120, 50, 50), (-0.22, -0.52), (0.26, -0.5), 0.07)
-    elif mouth == "o":
-        ell((150, 60, 60), 0.05, -0.52, 0.26, 0.2)
-        ell((90, 30, 30), 0.05, -0.52, 0.14, 0.1)
+def spline(pts, closed=True, steps=8):
+    """Catmull-Rom curve through the points (smooth organic shapes)."""
+    n = len(pts)
+    out = []
+    rng = range(n) if closed else range(n - 1)
+    for i in rng:
+        p0 = pts[(i - 1) % n] if closed or i > 0 else pts[0]
+        p1, p2 = pts[i], pts[(i + 1) % n]
+        p3 = pts[(i + 2) % n] if closed or i + 2 < n else pts[-1]
+        for j in range(steps):
+            t = j / steps
+            t2, t3 = t * t, t * t * t
+            out.append(tuple(0.5 * (2 * p1[d] + (-p0[d] + p2[d]) * t + (2 * p0[d] - 5 * p1[d] + 4 * p2[d] - p3[d]) * t2
+                                    + (-p0[d] + 3 * p1[d] - 3 * p2[d] + p3[d]) * t3) for d in (0, 1)))
+    if not closed:
+        out.append(pts[-1])
+    return out
 
 
-def _swiss_pin(ell, poly, P, R, surf):
-    r = pygame.Rect(0, 0, 0.36 * R, 0.36 * R)
-    r.center = P(0.62, -1.1)
-    pygame.draw.rect(surf, (220, 30, 40), r, border_radius=int(0.05 * R))
-    cx, cy = r.center
-    pygame.draw.rect(surf, (255, 255, 255), (cx - 0.04 * R, cy - 0.12 * R, 0.08 * R, 0.24 * R))
-    pygame.draw.rect(surf, (255, 255, 255), (cx - 0.12 * R, cy - 0.04 * R, 0.24 * R, 0.08 * R))
+class Painter:
+    """Draws in head units: (0, 0) is the head centre, 1 is the head radius, y points up."""
+
+    def __init__(self, surf, R):
+        self.s, self.R = surf, R
+        self.c = surf.get_width() / 2
+
+    def P(self, x, y):
+        return (self.c + x * self.R, self.c - y * self.R)
+
+    def shape(self, col, pts, smooth=True, outline=OUT, ow=0.045):
+        q = [self.P(*p) for p in (spline(pts) if smooth else pts)]
+        if outline:
+            pygame.draw.polygon(self.s, outline, q)
+            pygame.draw.polygon(self.s, outline, q, max(1, int(ow * self.R * 2)))
+        pygame.draw.polygon(self.s, col, q)
+        if outline:
+            pygame.draw.polygon(self.s, outline, q, max(1, int(ow * self.R)))
+
+    def fill(self, col, pts, smooth=True):
+        self.shape(col, pts, smooth, outline=None)
+
+    def ell(self, col, x, y, w, h, outline=None, ow=0.04):
+        r = pygame.Rect(0, 0, w * self.R, h * self.R)
+        r.center = self.P(x, y)
+        if outline:
+            pygame.draw.ellipse(self.s, outline, r.inflate(ow * self.R * 2, ow * self.R * 2))
+        pygame.draw.ellipse(self.s, col, r)
+
+    def line(self, col, pts, w, smooth=True):
+        q = [self.P(*p) for p in (spline(pts, closed=False) if smooth and len(pts) > 2 else pts)]
+        width = max(1, int(w * self.R))
+        pygame.draw.lines(self.s, col, False, q, width)
+        for pt in (q[0], q[-1]):
+            pygame.draw.circle(self.s, col, pt, width / 2)
+
+    def masked(self, mask_pts, draw):
+        """Draw with `draw(painter)` but only inside the given smooth outline."""
+        tmp = pygame.Surface(self.s.get_size(), pygame.SRCALPHA)
+        draw(Painter(tmp, self.R))
+        mask = pygame.Surface(self.s.get_size(), pygame.SRCALPHA)
+        pygame.draw.polygon(mask, (255, 255, 255, 255), [self.P(*p) for p in spline(mask_pts)])
+        tmp.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        self.s.blit(tmp, (0, 0))
 
 
-def _default(ell, poly, line, arc, P, R, surf):
-    _base(ell, line, arc, (240, 196, 160))
-    poly((70, 50, 36), [(-0.95, 0.35), (-0.8, 0.9), (0.0, 1.1), (0.8, 0.9), (0.95, 0.4), (0.4, 0.75), (-0.4, 0.75)])
+# ------------------------------------------------------------------ parts
+FACE_ROUND = [(0, 0.98), (0.62, 0.8), (0.88, 0.3), (0.84, -0.3), (0.62, -0.78), (0.0, -1.02), (-0.62, -0.78),
+              (-0.84, -0.3), (-0.88, 0.3), (-0.62, 0.8)]
 
 
-def _trump(ell, poly, line, arc, P, R, surf):
-    skin = (246, 168, 98)
-    hair, hair_dk = (252, 214, 112), (214, 170, 70)
-    ell(hair_dk, -0.2, 0.55, 2.2, 1.4)
-    _base(ell, line, arc, skin, brow=(232, 190, 110), eye=(60, 90, 140), mouth="o", eyes_open=0.22)
-    for x in (-0.36, 0.36):
-        ell((252, 224, 190), x, 0.14, 0.5, 0.36, 0)
-        ell((255, 255, 255), x, 0.14, 0.32, 0.18)
-        ell((60, 90, 140), x + 0.06, 0.13, 0.13, 0.13)
-    ell(hair, -0.05, 0.86, 2.08, 0.9)
-    ell(hair, 0.62, 0.66, 1.16, 0.5)
-    ell(hair, -0.82, 0.5, 0.5, 0.7)
-    ell(gfx.shade(hair, 1.15), 0.1, 1.0, 1.2, 0.34)
-    arc(hair_dk, 0.3, 0.7, 1.6, 0.5, 0.3, 2.6, 0.04)
+def face_pts(width=1.0, jaw=1.0, chin=1.0, length=1.0):
+    pts = []
+    for x, y in FACE_ROUND:
+        w = width * (jaw if y < -0.2 else 1.0)
+        yy = y * (chin if y < -0.9 else 1.0)
+        pts.append((x * w, yy * length if y < 0 else yy))
+    return pts
 
 
-def _putin(ell, poly, line, arc, P, R, surf):
-    skin = (240, 210, 190)
-    _base(ell, line, arc, skin, brow=(170, 140, 110), eye=(90, 120, 150), mouth="flat", face_w=1.76, blush=False,
-          eyes_open=0.26)
-    for side in (-1, 1):
-        poly((176, 146, 116), [(side * 0.86, 0.1), (side * 0.92, 0.55), (side * 0.7, 0.85), (side * 0.6, 0.55)])
-    line((190, 160, 130), (-0.25, 0.92), (0.2, 0.96), 0.05)
-    ell((255, 236, 222), -0.2, 0.75, 0.5, 0.18)
-    line(gfx.shade(skin, 0.8), (-0.6, -0.15), (-0.45, -0.4), 0.04)
-    line(gfx.shade(skin, 0.8), (0.65, -0.15), (0.5, -0.4), 0.04)
+def suit(p, suit_col, tie_col, shirt=(250, 250, 248), pin=None):
+    p.fill(gfx.shade(suit_col, 0.85), [(-1.85, -2.0), (-1.7, -1.42), (-1.0, -1.12), (1.0, -1.12), (1.7, -1.42),
+                                      (1.85, -2.0)], smooth=False)
+    p.fill(suit_col, [(-1.8, -2.0), (-1.62, -1.48), (-0.95, -1.2), (0.95, -1.2), (1.62, -1.48), (1.8, -2.0)])
+    p.fill(shirt, [(-0.5, -1.06), (0.5, -1.06), (0.3, -2.0), (-0.3, -2.0)], smooth=False)
+    for sd in (-1, 1):
+        p.fill(gfx.shade(suit_col, 0.75), [(sd * 0.48, -1.12), (sd * 0.3, -2.0), (sd * 0.62, -1.95), (sd * 0.82, -1.25)],
+               smooth=False)
+        p.fill((228, 228, 226), [(sd * 0.05, -1.12), (sd * 0.52, -1.04), (sd * 0.36, -1.36)], smooth=False)
+    if tie_col:
+        p.fill(gfx.shade(tie_col, 0.85), [(-0.13, -1.13), (0.13, -1.13), (0.1, -1.33), (-0.1, -1.33)], smooth=False)
+        p.fill(tie_col, [(-0.1, -1.33), (0.1, -1.33), (0.19, -1.9), (0.0, -2.0), (-0.19, -1.9)], smooth=False)
+        p.line(gfx.shade(tie_col, 1.3), [(-0.05, -1.45), (0.08, -1.62)], 0.03, smooth=False)
+    if pin == "us":
+        r = pygame.Rect(0, 0, 0.24 * p.R, 0.15 * p.R)
+        r.center = p.P(-0.85, -1.48)
+        pygame.draw.rect(p.s, (220, 40, 50), r)
+        pygame.draw.rect(p.s, (250, 250, 250), r.inflate(0, -r.h * 0.6))
+        pygame.draw.rect(p.s, (40, 60, 150), (r.x, r.y, r.w * 0.45, r.h * 0.55))
+    elif pin == "ch":
+        r = pygame.Rect(0, 0, 0.22 * p.R, 0.22 * p.R)
+        r.center = p.P(-0.88, -1.48)
+        pygame.draw.rect(p.s, (220, 30, 40), r)
+        cx, cy = r.center
+        pygame.draw.rect(p.s, (255, 255, 255), (cx - 0.025 * p.R, cy - 0.07 * p.R, 0.05 * p.R, 0.14 * p.R))
+        pygame.draw.rect(p.s, (255, 255, 255), (cx - 0.07 * p.R, cy - 0.025 * p.R, 0.14 * p.R, 0.05 * p.R))
 
 
-def _bonnie(ell, poly, line, arc, P, R, surf):
-    skin = (248, 212, 190)
-    hair, hair_dk = (250, 226, 150), (222, 186, 100)
-    poly(hair_dk, [(-1.2, 0.6), (-1.35, -0.6), (-1.15, -1.55), (-0.6, -1.4), (0.6, -1.4), (1.15, -1.55), (1.35, -0.6),
-                   (1.2, 0.6), (0.6, 1.25), (-0.6, 1.25)])
-    _base(ell, line, arc, skin, brow=(200, 160, 90), eye=(60, 130, 220), mouth="smile")
-    ell((230, 90, 130), 0.03, -0.5, 0.42, 0.16)
-    for x in (-0.36, 0.36):
-        line((40, 30, 30), (x - 0.18, 0.3), (x + 0.2, 0.3), 0.05)
-    poly(hair, [(-1.05, 0.4), (-0.9, 1.0), (-0.2, 1.22), (0.7, 1.1), (1.08, 0.6), (1.0, 0.2), (0.5, 0.8),
-                (-0.3, 0.72), (-0.8, 0.3)])
-    poly(gfx.shade(hair, 1.1), [(-0.4, 1.05), (0.4, 1.12), (0.9, 0.7), (0.3, 0.9)])
+def neck(p, skin, w=0.36):
+    p.fill(gfx.shade(skin, 0.78), [(-w, -0.6), (w, -0.6), (w * 1.05, -1.25), (-w * 1.05, -1.25)], smooth=False)
 
 
-def _mozart(ell, poly, line, arc, P, R, surf):
-    wig, wig_dk = (244, 244, 240), (196, 196, 200)
-    ell(wig_dk, -0.05, 0.45, 2.15, 1.65)
-    ell((200, 30, 40), -1.18, -0.5, 0.4, 0.26)
-    ell((200, 30, 40), -1.18, -0.82, 0.26, 0.4)
-    _base(ell, line, arc, (252, 228, 214), brow=(150, 120, 100), eye=(70, 90, 120), mouth="smile")
-    ell(wig, 0.0, 0.78, 1.95, 0.85)
-    for side in (-1, 1):
-        for y in (0.1, -0.22):
-            ell(wig_dk, side * 1.02, y, 0.52, 0.28)
-            ell(wig, side * 1.0, y + 0.02, 0.46, 0.22)
+def ears(p, skin, y=0.02, size=1.0, x=0.86):
+    for sd in (-1, 1):
+        p.ell(gfx.shade(skin, 0.92), sd * x, y, 0.3 * size, 0.46 * size, OUT, 0.04)
+        p.ell(gfx.shade(skin, 0.78), sd * (x + 0.02), y - 0.02, 0.13 * size, 0.26 * size)
 
 
-def _einstein(ell, poly, line, arc, P, R, surf):
-    hair = (236, 236, 238)
-    for i in range(13):
-        a = math.radians(-20 + i * 17.5)
-        ell(gfx.shade(hair, 0.85 if i % 2 else 1.0), math.cos(a) * 1.05, math.sin(a) * 1.0 + 0.15, 0.62, 0.5)
-    for a, L in ((15, 1.6), (50, 1.55), (90, 1.5), (130, 1.55), (165, 1.6), (-10, 1.5), (190, 1.5)):
-        ar = math.radians(a)
-        poly(hair, [(math.cos(ar - 0.25) * 0.9, math.sin(ar - 0.25) * 0.9 + 0.1),
-                    (math.cos(ar) * L, math.sin(ar) * L + 0.1),
-                    (math.cos(ar + 0.25) * 0.9, math.sin(ar + 0.25) * 0.9 + 0.1)])
-    _base(ell, line, arc, (238, 200, 172), brow=(225, 225, 228), eye=(80, 60, 50), mouth=None)
-    for x in (-0.36, 0.36):
-        line((228, 228, 230), (x - 0.22, 0.42), (x + 0.22, 0.48), 0.13)
-        arc(gfx.shade((238, 200, 172), 0.8), x, 0.0, 0.32, 0.18, math.pi, 2 * math.pi, 0.03)
-    ell((200, 70, 90), 0.05, -0.68, 0.32, 0.38)
-    line((150, 40, 60), (0.05, -0.55), (0.05, -0.8), 0.03)
-    poly(hair, [(-0.5, -0.32), (-0.1, -0.22), (0.05, -0.28), (0.2, -0.22), (0.6, -0.32), (0.45, -0.5), (0.05, -0.44),
-                (-0.35, -0.5)])
+def head(p, skin, pts):
+    p.shape(skin, pts)
+
+    def shading(q):
+        q.ell(gfx.shade(skin, 0.95), 0.55, -0.05, 1.3, 2.4)
+        q.ell(gfx.shade(skin, 0.9), 0.85, -0.1, 0.8, 2.2)
+        q.ell(gfx.shade(skin, 0.9), 0.0, -1.0, 1.4, 0.5)
+        q.ell(gfx.shade(skin, 1.06), -0.28, 0.62, 0.95, 0.42)
+        q.ell(gfx.mix(skin, (232, 110, 110), 0.28), -0.52, -0.3, 0.42, 0.24)
+        q.ell(gfx.mix(skin, (232, 110, 110), 0.22), 0.55, -0.3, 0.38, 0.22)
+    p.masked(pts, shading)
 
 
-def _roesti(ell, poly, line, arc, P, R, surf):
-    _base(ell, line, arc, (246, 204, 176), brow=(70, 50, 36), eye=(70, 50, 40), mouth="grin", face_w=1.92)
-    poly((82, 58, 42), [(-0.98, 0.3), (-0.9, 0.85), (-0.3, 1.12), (0.5, 1.08), (0.98, 0.7), (0.95, 0.35),
-                        (0.6, 0.75), (-0.15, 0.82), (-0.7, 0.62)])
-    line((60, 40, 30), (-0.15, 0.82), (0.0, 1.08), 0.04)
-    _swiss_pin(ell, poly, P, R, surf)
+def draw_hair(p, col, outer, front, hi=None, strands=()):
+    """Hair: filled between the outer contour and the hairline, outlined only on the outside."""
+    pts = spline(outer, closed=False) + spline(front[::-1], closed=False)[1:]
+    q = [p.P(*pt) for pt in pts]
+    pygame.draw.polygon(p.s, col, q)
+    p.line(OUT, outer, 0.045)
+    for st in strands:
+        p.line(hi or gfx.shade(col, 1.25), st, 0.03)
 
 
-def _blocher(ell, poly, line, arc, P, R, surf):
-    skin = (244, 198, 170)
-    _base(ell, line, arc, skin, brow=(110, 110, 110), eye=(70, 60, 50), mouth="grin", face_w=1.96)
-    for x in (-0.36, 0.36):
-        line((100, 100, 100), (x - 0.2, 0.44), (x + 0.2, 0.47), 0.12)
-    for side in (-1, 1):
-        poly((222, 222, 222), [(side * 0.9, -0.05), (side * 1.0, 0.45), (side * 0.85, 0.7), (side * 0.72, 0.4)])
-    ell((255, 236, 220), -0.25, 0.78, 0.5, 0.2)
-    _swiss_pin(ell, poly, P, R, surf)
+def tufts(p, col, pts, size=0.2, dark=None):
+    """Little locks hanging over the hairline so it isn't a straight cap edge."""
+    for x, y, ang in pts:
+        dx, dy = math.sin(ang) * size, -math.cos(ang) * size
+        lock = [(x - size * 0.45, y + 0.02), (x + size * 0.45, y + 0.02), (x + dx + size * 0.08, y + dy)]
+        if dark:
+            p.fill(dark, [(a + 0.015, b - 0.015) for a, b in lock], smooth=False)
+        p.fill(col, lock, smooth=False)
 
 
-def _maurer(ell, poly, line, arc, P, R, surf):
-    _base(ell, line, arc, (240, 202, 178), brow=(140, 140, 140), eye=(60, 60, 60), mouth="smile", face_w=1.7,
-          face_h=2.06)
-    poly((172, 172, 174), [(-0.88, 0.3), (-0.82, 0.86), (-0.2, 1.1), (0.55, 1.05), (0.88, 0.62), (0.85, 0.35),
-                           (0.5, 0.72), (-0.35, 0.78), (-0.7, 0.55)])
-    line((140, 140, 140), (-0.35, 0.78), (-0.25, 1.06), 0.04)
-    _swiss_pin(ell, poly, P, R, surf)
+def eye(p, x, y, iris, w=0.34, h=0.2, lid=0.0, look=0.04, lash=0.0, skin=None, bags=0.0):
+    almond = [(x - w / 2, y), (x - w * 0.22, y + h / 2), (x + w * 0.22, y + h / 2), (x + w / 2, y + h * 0.05),
+              (x + w * 0.2, y - h / 2), (x - w * 0.22, y - h / 2)]
+    if bags and skin:
+        p.line(gfx.shade(skin, 0.8), [(x - w * 0.42, y - h * 0.62), (x, y - h * 0.9), (x + w * 0.42, y - h * 0.62)],
+               0.025)
+    p.fill((252, 252, 250), almond)
+
+    def inner(q):
+        r = h * 0.48
+        q.ell(gfx.shade(iris, 0.75), x + look, y - h * 0.02, r * 2.1, r * 2.1)
+        q.ell(iris, x + look, y - h * 0.02, r * 1.8, r * 1.8)
+        q.ell((22, 20, 22), x + look, y - h * 0.02, r * 0.9, r * 0.9)
+        q.ell((255, 255, 255), x + look + r * 0.35, y + r * 0.35, r * 0.45, r * 0.45)
+        if lid > 0 and skin:
+            q.fill(gfx.shade(skin, 0.94), [(x - w, y + h), (x + w, y + h), (x + w, y + h / 2 - h * lid),
+                                           (x - w, y + h / 2 - h * lid)], smooth=False)
+    p.masked(almond, inner)
+    top = [(x - w / 2, y), (x - w * 0.22, y + h / 2 - h * lid), (x + w * 0.22, y + h / 2 - h * lid), (x + w / 2, y + h * 0.05)]
+    p.line(OUT, top, 0.045 + lash)
+    if lash:
+        for i in range(3):
+            fx = x + w * (0.18 + i * 0.12)
+            p.line(OUT, [(fx, y + h * 0.45), (fx + 0.05, y + h * 0.75)], 0.03, smooth=False)
 
 
-def _greta(ell, poly, line, arc, P, R, surf):
-    hair, tie = (126, 84, 52), (230, 200, 60)
-    _base(ell, line, arc, (246, 214, 196), brow=(110, 74, 46), eye=(70, 90, 110), mouth="flat", blush=False)
-    for x, d in ((-0.36, 1), (0.36, -1)):
-        line((110, 74, 46), (x - 0.18, 0.4 + 0.08 * d), (x + 0.18, 0.4 - 0.08 * d), 0.08)
-    for fx, fy in ((-0.5, -0.12), (-0.42, -0.2), (0.55, -0.1), (0.48, -0.18)):
-        ell((200, 140, 110), fx, fy, 0.05, 0.05)
-    poly(hair, [(-0.98, 0.25), (-0.85, 0.95), (0.0, 1.12), (0.85, 0.95), (0.98, 0.25), (0.6, 0.7), (0.0, 0.85),
-                (-0.6, 0.7)])
-    line(gfx.shade(hair, 0.8), (0.0, 0.85), (0.0, 1.1), 0.04)
-    for side in (-1, 1):
-        for i in range(6):
-            ell(gfx.shade(hair, 0.85 if i % 2 else 1.0), side * (0.9 + 0.02 * i), -0.2 - i * 0.24, 0.34, 0.32)
-        ell(tie, side * 1.02, -1.62, 0.2, 0.14)
+def brow(p, x, y, w, col, angle=0.0, thick=0.09):
+    d = math.tan(angle) * w / 2
+    p.fill(col, [(x - w / 2, y - d - thick * 0.2), (x - w / 2 + 0.04, y - d + thick * 0.6), (x, y + thick * 0.75),
+                 (x + w / 2, y + d + thick * 0.35), (x + w / 2, y + d - thick * 0.25), (x, y + thick * 0.05)])
+
+
+def nose(p, skin, w=0.2, y=-0.28, length=0.42):
+    dark = gfx.shade(skin, 0.74)
+    p.line(gfx.shade(skin, 0.84), [(w * 0.3, y + length), (w * 0.55, y + length * 0.4), (w * 0.62, y + 0.05)], 0.04)
+    p.ell(gfx.shade(skin, 0.9), 0.0, y + 0.02, w * 1.9, w * 1.0)
+    p.ell(gfx.shade(skin, 1.06), -0.02, y + 0.08, w * 0.8, w * 0.45)
+    p.ell(dark, -w * 0.38, y - 0.04, w * 0.42, w * 0.22)
+    p.ell(dark, w * 0.42, y - 0.04, w * 0.42, w * 0.22)
+
+
+def smile(p, y=-0.58, w=0.5, open_=0.0, lip=(170, 80, 80)):
+    if open_:
+        mouth = [(-w / 2, y + 0.02), (0, y - 0.03), (w / 2, y + 0.02), (w * 0.3, y - open_), (0, y - open_ * 1.15),
+                 (-w * 0.3, y - open_)]
+        p.shape((110, 30, 30), mouth, ow=0.03)
+
+        def teeth(q):
+            q.fill((252, 250, 244), [(-w, y + 0.1), (w, y + 0.1), (w, y - open_ * 0.45), (-w, y - open_ * 0.45)], False)
+        p.masked(mouth, teeth)
+    else:
+        p.line(gfx.shade(lip, 0.8), [(-w / 2, y + 0.04), (-w * 0.2, y - 0.04), (w * 0.2, y - 0.04), (w / 2, y + 0.04)], 0.05)
+
+
+def glasses(p, y, w, h, rim, gap=0.1, rimless=False):
+    for sd in (-1, 1):
+        cx = sd * (gap / 2 + w / 2)
+        r = pygame.Rect(0, 0, w * p.R, h * p.R)
+        r.center = p.P(cx, y)
+        lens = pygame.Surface(r.size, pygame.SRCALPHA)
+        pygame.draw.rect(lens, (210, 230, 245, 70), lens.get_rect(), border_radius=int(h * p.R * 0.35))
+        p.s.blit(lens, r)
+        pygame.draw.rect(p.s, rim, r, max(1, int((0.02 if rimless else 0.04) * p.R)), border_radius=int(h * p.R * 0.35))
+        pygame.draw.line(p.s, (255, 255, 255), (r.x + r.w * 0.2, r.y + r.h * 0.3), (r.x + r.w * 0.4, r.y + r.h * 0.18),
+                         max(1, int(0.025 * p.R)))
+    p.line(rim, [(-gap / 2, y + h * 0.15), (gap / 2, y + h * 0.15)], 0.035, smooth=False)
+    for sd in (-1, 1):
+        p.line(rim, [(sd * (gap / 2 + w), y + h * 0.2), (sd * 0.86, y + h * 0.3)], 0.035, smooth=False)
+
+
+def wrinkles(p, skin, forehead=0, laugh=0.0, crows=0.0):
+    col = gfx.shade(skin, 0.8)
+    for i in range(forehead):
+        yy = 0.58 + i * 0.1
+        p.line(col, [(-0.42, yy), (0.0, yy + 0.03), (0.42, yy)], 0.025)
+    if laugh:
+        for sd in (-1, 1):
+            p.line(col, [(sd * 0.24, -0.18), (sd * 0.36, -0.42), (sd * 0.38, -0.62 - laugh * 0.1)], 0.03)
+    if crows:
+        for sd in (-1, 1):
+            for a in (-0.25, 0.0, 0.25):
+                p.line(col, [(sd * 0.56, 0.12 + a * 0.2), (sd * (0.56 + 0.12 * crows), 0.12 + a * 0.45)], 0.02, False)
+
+
+# ------------------------------------------------------------- characters
+def _default(p):
+    skin = (240, 196, 160)
+    neck(p, skin)
+    suit(p, (36, 112, 210), None, shirt=(36, 112, 210))
+    ears(p, skin)
+    pts = face_pts()
+    head(p, skin, pts)
+    for x in (-0.34, 0.34):
+        eye(p, x, 0.12, (90, 70, 50))
+        brow(p, x, 0.38, 0.32, (80, 56, 40))
+    nose(p, skin)
+    smile(p, open_=0.12)
+    p.shape((84, 60, 42), [(-0.92, 0.25), (-0.88, 0.85), (-0.3, 1.12), (0.4, 1.1), (0.9, 0.8), (0.93, 0.3),
+                           (0.6, 0.66), (0.0, 0.78), (-0.6, 0.62)])
+
+
+def _trump(p):
+    skin = (238, 158, 98)
+    hair, hair_dk, hair_hi = (246, 226, 168), (214, 180, 112), (255, 246, 214)
+    neck(p, skin, 0.42)
+    suit(p, (30, 40, 78), (36, 80, 170), pin="us")
+    ears(p, skin, size=1.05)
+    pts = face_pts(width=1.04, jaw=1.08, chin=0.96)
+    head(p, skin, pts)
+
+    def jowls(q):
+        for sd in (-1, 1):
+            q.line(gfx.shade(skin, 0.78), [(sd * 0.3, -0.3), (sd * 0.5, -0.66), (sd * 0.42, -0.92)], 0.035)
+        q.ell(gfx.shade(skin, 0.88), 0, -0.88, 0.7, 0.24)
+    p.masked(pts, jowls)
+    for x in (-0.33, 0.33):
+        p.ell((250, 214, 178), x, 0.12, 0.5, 0.34)          # pale "goggle" skin around the eyes
+        eye(p, x, 0.12, (70, 110, 170), w=0.3, h=0.13, lid=0.25, skin=(250, 214, 178), bags=0.6)
+        brow(p, x, 0.3, 0.34, (196, 150, 92), angle=0.25 if x < 0 else -0.25, thick=0.11)
+    p.line(gfx.shade(skin, 0.8), [(-0.06, 0.34), (-0.04, 0.24)], 0.03, False)
+    p.line(gfx.shade(skin, 0.8), [(0.06, 0.34), (0.04, 0.24)], 0.03, False)
+    nose(p, skin, w=0.24)
+    lips = [(-0.2, -0.56), (0.0, -0.5), (0.2, -0.56), (0.12, -0.66), (0.0, -0.68), (-0.12, -0.66)]
+    p.shape((196, 104, 90), lips, ow=0.03)
+    p.line((140, 60, 60), [(-0.14, -0.6), (0.14, -0.6)], 0.03, False)
+    # The famous hair: swept back on the sides, a big blond wave combed forward over the forehead.
+    draw_hair(p, hair_dk, [(-0.94, 0.1), (-1.06, 0.62), (-0.88, 1.08), (-0.3, 1.36), (0.45, 1.38), (1.02, 1.1),
+                      (1.16, 0.6), (1.0, 0.12)],
+         [(-0.94, 0.1), (-0.84, 0.5), (-0.4, 0.62), (0.2, 0.6), (0.7, 0.58), (1.0, 0.12)])
+    draw_hair(p, hair, [(-0.86, 0.5), (-0.92, 0.95), (-0.45, 1.26), (0.3, 1.32), (0.92, 1.12), (1.12, 0.74),
+                   (1.02, 0.42)],
+         [(-0.86, 0.5), (-0.5, 0.66), (0.0, 0.6), (0.5, 0.66), (0.86, 0.56), (1.02, 0.42)], hi=hair_hi,
+         strands=[[(1.0, 0.75), (0.5, 0.98), (-0.3, 1.05), (-0.75, 0.86)],
+                  [(1.02, 0.6), (0.4, 0.82), (-0.2, 0.86), (-0.7, 0.7)],
+                  [(0.8, 1.05), (0.2, 1.2), (-0.4, 1.12)]])
+    for sd in (-1, 1):
+        p.fill(hair_dk, [(sd * 0.8, 0.2), (sd * 0.98, 0.25), (sd * 0.98, 0.62), (sd * 0.8, 0.5)])
+
+
+def _putin(p):
+    skin = (242, 210, 192)
+    hair = (186, 168, 150)
+    neck(p, skin, 0.34)
+    suit(p, (32, 32, 36), (126, 28, 40))
+    ears(p, skin, size=1.08, x=0.82)
+    pts = face_pts(width=0.94, jaw=0.86, chin=0.98, length=1.04)
+    head(p, skin, pts)
+
+    def detail(q):
+        q.ell(gfx.shade(skin, 1.06), -0.1, 0.72, 1.1, 0.5)              # high forehead
+        for sd in (-1, 1):
+            q.fill(hair, [(sd * 0.95, 0.05), (sd * 0.96, 0.6), (sd * 0.78, 0.88), (sd * 0.62, 0.7), (sd * 0.78, 0.35)])
+            q.line(gfx.shade(skin, 0.82), [(sd * 0.22, -0.2), (sd * 0.32, -0.45), (sd * 0.3, -0.62)], 0.025)
+        for i in range(4):
+            q.line(gfx.mix(hair, skin, 0.55), [(-0.5 + i * 0.12, 0.98), (-0.2 + i * 0.16, 0.9), (0.2 + i * 0.1, 0.94)],
+                   0.02)
+    p.masked(pts, detail)
+    for x in (-0.33, 0.33):
+        eye(p, x, 0.12, (110, 140, 160), w=0.3, h=0.15, lid=0.3, skin=skin, bags=0.5, look=0.02)
+        brow(p, x, 0.33, 0.3, (176, 150, 128), angle=0.08 if x < 0 else -0.08, thick=0.06)
+    nose(p, skin, w=0.18, length=0.46)
+    p.line((176, 110, 104), [(-0.2, -0.58), (0.0, -0.6), (0.2, -0.6)], 0.045)
+    p.line(gfx.shade(skin, 0.86), [(-0.12, -0.7), (0.12, -0.7)], 0.025, False)
+
+
+def _bonnie(p):
+    skin = (236, 190, 158)
+    hair, hair_dk, hair_hi = (246, 232, 200), (214, 192, 150), (255, 250, 236)
+    p.fill(hair_dk, [(-1.0, 0.7), (-1.22, -0.4), (-1.28, -1.6), (-0.7, -1.85), (0.7, -1.85), (1.28, -1.6),
+                     (1.22, -0.4), (1.0, 0.7), (0.0, 1.15)])
+    neck(p, skin, 0.32)
+    p.fill((244, 132, 176), [(-1.2, -2.0), (-1.0, -1.35), (-0.4, -1.2), (0.4, -1.2), (1.0, -1.35), (1.2, -2.0)])
+    pts = face_pts(width=0.92, jaw=0.88, chin=0.95)
+    head(p, skin, pts)
+    for x in (-0.33, 0.33):
+        eye(p, x, 0.1, (120, 92, 60), w=0.34, h=0.2, lash=0.03, look=0.03)
+        p.line((70, 50, 40), [(x - 0.17, 0.12), (x - 0.05, 0.22), (x + 0.12, 0.22), (x + 0.24, 0.16)], 0.06)
+        brow(p, x, 0.36, 0.3, (150, 112, 70), angle=-0.15 if x < 0 else 0.15, thick=0.06)
+    nose(p, skin, w=0.15, length=0.34)
+    lips = [(-0.24, -0.56), (-0.08, -0.5), (0.0, -0.53), (0.08, -0.5), (0.24, -0.56), (0.12, -0.68), (-0.12, -0.68)]
+    p.shape((222, 104, 136), lips, ow=0.025)
+    p.line((176, 60, 96), [(-0.2, -0.57), (0.2, -0.57)], 0.025, False)
+    p.ell((255, 200, 214), -0.06, -0.62, 0.12, 0.04)
+    p.shape(hair, [(0.0, 1.08), (-0.6, 0.98), (-0.98, 0.5), (-1.02, -0.3), (-0.96, -1.1), (-0.8, -1.25),
+                   (-0.76, -0.4), (-0.7, 0.4), (-0.3, 0.85), (0.0, 0.94), (0.3, 0.85), (0.7, 0.4), (0.76, -0.4),
+                   (0.8, -1.25), (0.96, -1.1), (1.02, -0.3), (0.98, 0.5), (0.6, 0.98)], ow=0.03)
+    for sd in (-1, 1):
+        p.line(hair_hi, [(sd * 0.25, 0.98), (sd * 0.7, 0.72), (sd * 0.86, 0.1), (sd * 0.88, -0.8)], 0.04)
+    p.line(hair_dk, [(0.0, 1.06), (0.0, 0.94)], 0.03, False)
+
+
+def _mozart(p):
+    skin = (252, 226, 212)
+    wig, wig_dk = (242, 242, 238), (200, 200, 206)
+    p.ell((26, 26, 30), -0.98, -0.62, 0.36, 0.24)          # black ribbon of the queue
+    p.ell((26, 26, 30), -1.1, -0.82, 0.22, 0.34)
+    neck(p, skin, 0.32)
+    p.fill((172, 32, 44), [(-1.8, -2.0), (-1.6, -1.42), (-0.9, -1.15), (0.9, -1.15), (1.6, -1.42), (1.8, -2.0)])
+    for i in range(5):                                      # lace jabot
+        p.ell((252, 252, 248), 0.0, -1.2 - i * 0.16, 0.6 - i * 0.04, 0.24, OUT, 0.02)
+    pts = face_pts(width=0.92, jaw=0.94)
+    head(p, skin, pts)
+    for x in (-0.33, 0.33):
+        eye(p, x, 0.1, (110, 130, 150), w=0.32, h=0.19, look=0.03)
+        brow(p, x, 0.36, 0.3, (170, 140, 112), angle=-0.1 if x < 0 else 0.1, thick=0.05)
+    nose(p, skin, w=0.2, length=0.5)
+    smile(p, w=0.4, lip=(200, 100, 100))
+    p.shape(wig, [(-0.95, 0.15), (-0.98, 0.75), (-0.55, 1.14), (0.1, 1.24), (0.7, 1.08), (0.98, 0.7),
+                  (0.95, 0.15), (0.7, 0.62), (0.0, 0.74), (-0.7, 0.62)])
+    p.line(wig_dk, [(-0.6, 0.98), (0.0, 1.08), (0.6, 0.98)], 0.03)
+    for sd in (-1, 1):
+        for yy in (0.18, -0.12):
+            p.ell(wig_dk, sd * 1.0, yy, 0.56, 0.3, OUT, 0.03)
+            p.ell(wig, sd * 0.98, yy + 0.02, 0.48, 0.22)
+            p.ell(wig_dk, sd * 0.88, yy, 0.12, 0.12)
+
+
+def _einstein(p):
+    skin = (236, 198, 170)
+    hair, hair_dk = (240, 240, 240), (196, 196, 202)
+    puffs = []
+    for i in range(17):
+        a = math.pi * (-0.2 + 1.4 * i / 16)
+        r = 1.05 + 0.22 * abs(math.sin(i * 1.9)) + (0.12 if i % 3 == 0 else 0)
+        size = 0.5 + 0.18 * abs(math.cos(i * 2.3))
+        puffs.append((math.cos(a) * r * 1.12, math.sin(a) * r * 0.95 + 0.15, size))
+    for x, y, sz in puffs:
+        p.ell(OUT, x, y, sz + 0.07, sz * 0.86 + 0.07)
+    for x, y, sz in puffs:
+        p.ell(hair_dk, x, y, sz, sz * 0.86)
+    for x, y, sz in puffs:
+        p.ell(hair, x - 0.04, y + 0.04, sz * 0.82, sz * 0.7)
+    for x, y, sz in puffs[::2]:
+        p.line((255, 255, 255), [(x - sz * 0.2, y + sz * 0.1), (x + sz * 0.15, y + sz * 0.22)], 0.03)
+    neck(p, skin, 0.36)
+    p.fill((112, 112, 124), [(-1.8, -2.0), (-1.6, -1.4), (-0.9, -1.12), (0.9, -1.12), (1.6, -1.4), (1.8, -2.0)])
+    p.fill((92, 92, 104), [(-0.5, -1.1), (0.5, -1.1), (0.4, -1.32), (-0.4, -1.32)])
+    ears(p, skin)
+    pts = face_pts(width=0.95)
+    head(p, skin, pts)
+    p.masked(pts, lambda q: wrinkles(q, skin, forehead=3, laugh=0.6))
+    crown = [(-0.7, 0.92, 0.42), (-0.32, 1.06, 0.44), (0.08, 1.1, 0.46), (0.46, 1.04, 0.44), (0.78, 0.86, 0.4)]
+    for x, y, sz in crown:
+        p.ell(OUT, x, y, sz + 0.07, sz * 0.8 + 0.07)
+    for x, y, sz in crown:
+        p.ell(hair_dk, x, y, sz, sz * 0.8)
+        p.ell(hair, x - 0.03, y + 0.04, sz * 0.8, sz * 0.62)
+    for x in (-0.33, 0.33):
+        eye(p, x, 0.08, (90, 70, 56), w=0.3, h=0.17, lid=0.25, skin=skin, bags=1.0, look=0.02)
+        brow(p, x, 0.34, 0.36, (220, 220, 222), angle=-0.3 if x < 0 else 0.3, thick=0.13)
+    nose(p, skin, w=0.24, length=0.46)
+    p.ell((110, 30, 40), 0.02, -0.66, 0.36, 0.3)
+    p.ell((224, 96, 120), 0.02, -0.76, 0.28, 0.32, OUT, 0.025)
+    p.line((170, 60, 80), [(0.02, -0.66), (0.02, -0.84)], 0.025, False)
+    p.shape(hair, [(-0.52, -0.42), (-0.25, -0.34), (0.0, -0.38), (0.25, -0.34), (0.54, -0.42), (0.44, -0.6),
+                   (0.02, -0.56), (-0.42, -0.6)], ow=0.03)
+    for i in range(5):
+        x0 = -0.36 + i * 0.18
+        p.line(hair_dk, [(x0, -0.4), (x0 + 0.03, -0.54)], 0.02, False)
+
+
+def _roesti(p):
+    skin = (240, 202, 178)
+    hair, hair_dk, hair_hi = (120, 86, 58), (84, 58, 40), (160, 122, 86)
+    neck(p, skin, 0.34)
+    suit(p, (40, 42, 50), (120, 120, 128))
+    ears(p, skin, x=0.82)
+    pts = face_pts(width=0.92, jaw=0.88, length=1.08)
+    head(p, skin, pts)
+    p.masked(pts, lambda q: wrinkles(q, skin, laugh=0.4))
+    for x in (-0.31, 0.31):
+        eye(p, x, 0.12, (96, 74, 52), w=0.28, h=0.14, lid=0.15, skin=skin, look=0.02)
+        brow(p, x, 0.36, 0.3, hair_dk, angle=-0.08 if x < 0 else 0.08, thick=0.07)
+    glasses(p, 0.12, 0.42, 0.26, (150, 152, 160), gap=0.12, rimless=True)
+    nose(p, skin, w=0.2, length=0.48)
+    smile(p, y=-0.62, w=0.46)
+    draw_hair(p, hair, [(-0.86, 0.22), (-0.98, 0.72), (-0.72, 1.14), (-0.1, 1.36), (0.55, 1.3), (0.98, 0.98),
+                   (0.98, 0.5), (0.88, 0.2)],
+         [(-0.86, 0.22), (-0.76, 0.6), (-0.3, 0.8), (0.2, 0.7), (0.62, 0.66), (0.88, 0.2)], hi=hair_hi,
+         strands=[[(-0.7, 0.9), (-0.2, 1.18), (0.4, 1.16)], [(-0.5, 0.82), (0.1, 1.0), (0.7, 0.92)],
+                  [(0.2, 1.24), (0.7, 1.1), (0.9, 0.8)]])
+    tufts(p, hair, [(-0.45, 0.8, 0.55), (-0.15, 0.78, 0.45), (0.15, 0.72, 0.5), (0.45, 0.7, 0.35)],
+          size=0.2, dark=hair_dk)
+
+
+def _blocher(p):
+    skin = (238, 188, 166)
+    hair, hair_dk = (232, 232, 234), (190, 190, 196)
+    neck(p, skin, 0.42)
+    suit(p, (104, 106, 114), (84, 104, 136))
+    ears(p, skin, size=1.15, x=0.92)
+    pts = face_pts(width=1.06, jaw=1.06, chin=0.96)
+    head(p, skin, pts)
+    p.masked(pts, lambda q: wrinkles(q, skin, forehead=2, laugh=1.0, crows=1.0))
+    for x in (-0.34, 0.34):
+        eye(p, x, 0.12, (90, 100, 110), w=0.28, h=0.11, lid=0.2, skin=skin, bags=0.8, look=0.02)
+        brow(p, x, 0.35, 0.34, (130, 128, 128), angle=-0.15 if x < 0 else 0.15, thick=0.09)
+    glasses(p, 0.12, 0.44, 0.28, (176, 178, 186), gap=0.12)
+    nose(p, skin, w=0.26, length=0.46)
+    smile(p, y=-0.56, w=0.64, open_=0.14)
+    draw_hair(p, hair, [(-0.98, 0.2), (-1.02, 0.66), (-0.78, 1.02), (-0.25, 1.18), (0.3, 1.18), (0.8, 1.02),
+                   (1.02, 0.66), (0.98, 0.2)],
+         [(-0.98, 0.2), (-0.86, 0.6), (-0.55, 0.9), (0.0, 0.98), (0.55, 0.9), (0.86, 0.6), (0.98, 0.2)],
+         hi=hair_dk, strands=[[(-0.6, 0.98), (-0.2, 1.1), (0.25, 1.1)], [(-0.3, 0.98), (0.2, 1.04), (0.6, 0.98)],
+                              [(-0.9, 0.45), (-0.82, 0.8)], [(0.9, 0.45), (0.82, 0.8)]])
+
+
+def _maurer(p):
+    skin = (236, 190, 166)
+    hair = (176, 176, 178)
+    neck(p, skin, 0.32)
+    suit(p, (30, 30, 34), (126, 28, 40), pin="ch")
+    ears(p, skin, size=1.1, x=0.8)
+    pts = face_pts(width=0.88, jaw=0.84, chin=0.96, length=1.12)
+    head(p, skin, pts)
+
+    def detail(q):
+        for sd in (-1, 1):
+            q.fill(hair, [(sd * 0.95, -0.05), (sd * 0.95, 0.5), (sd * 0.8, 0.68), (sd * 0.7, 0.45), (sd * 0.78, 0.05)])
+        q.ell((255, 236, 222), -0.2, 0.8, 0.5, 0.18)                    # shine on the bald head
+        wrinkles(q, skin, forehead=2, laugh=0.9)
+    p.masked(pts, detail)
+    for x in (-0.31, 0.31):
+        eye(p, x, 0.12, (96, 110, 120), w=0.28, h=0.13, lid=0.3, skin=skin, bags=1.0, look=0.02)
+        brow(p, x, 0.34, 0.3, (120, 116, 112), angle=0.0, thick=0.07)
+    nose(p, skin, w=0.2, length=0.5)
+    smile(p, y=-0.64, w=0.46)
+
+
+def _greta(p):
+    skin = (248, 222, 208)
+    hair, hair_dk, tie = (126, 90, 62), (92, 64, 44), (230, 200, 60)
+    neck(p, skin, 0.3)
+    p.fill((240, 170, 190), [(-1.3, -2.0), (-1.1, -1.38), (-0.4, -1.18), (0.4, -1.18), (1.1, -1.38), (1.3, -2.0)])
+    ears(p, skin, x=0.8)
+    pts = face_pts(width=0.9, jaw=0.9, chin=0.94)
+    head(p, skin, pts)
+    for fx, fy in ((-0.48, -0.12), (-0.4, -0.2), (-0.55, -0.22), (0.5, -0.12), (0.44, -0.2), (0.56, -0.22)):
+        p.ell((206, 150, 124), fx, fy, 0.04, 0.04)
+    for x, ang in ((-0.33, 0.28), (0.33, -0.28)):
+        eye(p, x, 0.1, (110, 136, 156), w=0.3, h=0.17, look=0.02)
+        brow(p, x, 0.32, 0.3, hair_dk, angle=ang, thick=0.07)
+    nose(p, skin, w=0.16, length=0.34)
+    p.line((176, 110, 110), [(-0.16, -0.6), (0.0, -0.62), (0.16, -0.6)], 0.045)
+    p.shape(hair, [(-0.9, 0.3), (-0.92, 0.8), (-0.5, 1.12), (0.0, 1.18), (0.5, 1.12), (0.92, 0.8), (0.9, 0.3),
+                   (0.6, 0.72), (0.0, 0.86), (-0.6, 0.72)])
+    p.line(hair_dk, [(0.0, 0.86), (0.0, 1.16)], 0.03, False)
+    for i in range(8):                                     # one long braid over the shoulder
+        y = 0.1 - i * 0.25
+        x = 0.92 + 0.05 * math.sin(i)
+        p.ell(hair_dk if i % 2 else hair, x, y, 0.36, 0.32, OUT, 0.025)
+    p.ell(tie, 0.95, -1.9, 0.2, 0.14, OUT, 0.02)
 
 
 DRAW = {"default": _default, "trump": _trump, "putin": _putin, "bonnie": _bonnie, "mozart": _mozart,

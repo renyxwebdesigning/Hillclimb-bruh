@@ -279,7 +279,7 @@ class StageSelect:
                       for i in range(n)]
         self.previews = {}
         self.next_btn = Button("NEXT", (gfx.W - s(170), gfx.H - s(62)), (250, 66), "green")
-        self.quit_btn = Button("QUIT", (s(170), gfx.H - s(62)), (220, 66), "gray")
+        self.quit_btn = Button("HOME", (s(170), gfx.H - s(62)), (220, 66), "gray")
         self.online_btn = Button("PLAY ONLINE", (gfx.W / 2, gfx.H - s(62)), (300, 66), "blue")
 
     def preview(self, st, r):
@@ -302,7 +302,7 @@ class StageSelect:
             elif ev.key == pygame.K_o:
                 app.goto("online")
             elif ev.key == pygame.K_ESCAPE:
-                app.quit()
+                app.goto("home")
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if toggles_hit(app, ev.pos):
                 return
@@ -313,7 +313,8 @@ class StageSelect:
                 app.audio.play("click")
                 app.goto("online")
             elif self.quit_btn.hit(ev.pos):
-                app.quit()
+                app.audio.play("click")
+                app.goto("home")
             for st, r in zip(STAGES, self.rects):
                 if r.collidepoint(ev.pos):
                     if app.data["stage"] == st["key"]:
@@ -987,7 +988,7 @@ class OnlineMenu:
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_ESCAPE:
                 self._remember_name()
-                app.goto("stages")
+                app.goto("home")
             elif ev.key == pygame.K_RETURN:
                 if self.join_num.active:
                     self.join(self.join_num.text)
@@ -1007,7 +1008,7 @@ class OnlineMenu:
             elif self.back_btn.hit(ev.pos):
                 self._remember_name()
                 app.audio.play("click")
-                app.goto("stages")
+                app.goto("home")
             for num, action, rect in self.hits:
                 if rect.collidepoint(ev.pos):
                     if action == "remove":

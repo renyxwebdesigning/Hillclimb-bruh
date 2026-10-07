@@ -19,6 +19,7 @@ import threading  # noqa: E402
 import pygame  # noqa: E402
 
 import gfx  # noqa: E402
+import home  # noqa: E402
 import lighting  # noqa: E402
 import save  # noqa: E402
 import sprites  # noqa: E402
@@ -85,10 +86,11 @@ class App:
         self.now = 0.0
         self._terrains = {}
         self._worlds = {}
-        self.screens = {"stages": ui.StageSelect(self), "vehicles": ui.VehicleSelect(self),
+        self.screens = {"home": None, "stages": ui.StageSelect(self), "vehicles": ui.VehicleSelect(self),
                         "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
                         "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
-        self.state = "stages"
+        self.screens["home"] = home.HomeMenu(self)
+        self.state = "home"
         self.run = None
         self.results = None
         self.pause = None
