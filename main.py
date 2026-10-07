@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# dependencies = [
+#  "pygame-ce",
+#  "numpy",
+# ]
+# ///
 """Hill Rider: a 2D hill-climb driving game.
 
 Right / D / Up = gas, Left / A / Down = brake (in the air they tilt the car).
@@ -14,23 +20,28 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import asyncio  # noqa: E402
 import threading  # noqa: E402
 
 import pygame  # noqa: E402
 
+import ghost  # noqa: E402
 import gfx  # noqa: E402
 import home  # noqa: E402
+import music  # noqa: E402
+import render  # noqa: E402
 import lighting  # noqa: E402
 import save  # noqa: E402
 import sprites  # noqa: E402
 import ui  # noqa: E402
 from audio import Audio  # noqa: E402
-from config import FPS, STAGE_BY_KEY, TITLE, VEHICLE_BY_KEY  # noqa: E402
+from config import FPS, STAGE_BY_KEY, TITLE, VEHICLE_BY_KEY, WEB  # noqa: E402
 from drivers import DRIVER_BY_KEY  # noqa: E402
 from game import Run, black_smoke  # noqa: E402
 from hud import Hud  # noqa: E402
 from online import Session  # noqa: E402
-from relay import Relay  # noqa: E402
+from progress import Progress  # noqa: E402
+from relay import OfflineRelay, Relay  # noqa: E402
 from render import Art, CarView, WorldRenderer  # noqa: E402
 from terrain import Terrain  # noqa: E402
 
@@ -40,6 +51,8 @@ BOOST_KEYS = (pygame.K_SPACE, pygame.K_LSHIFT, pygame.K_RSHIFT)
 
 
 def window_size():
+    if WEB:
+        return 1024, 576            # fewer pixels keeps phones smooth; the page scales it up
     try:
         dw, dh = pygame.display.get_desktop_sizes()[0]
     except (pygame.error, IndexError):
@@ -61,18 +74,31 @@ class App:
         self.window = pygame.display.set_mode((w, h))
         pygame.display.set_caption(TITLE)
         self.screen = gfx.init(w, h)            # opaque canvas; copied to the window each frame
-        if not hasattr(pygame.scrap, "get_text"):      # old pygame needs scrap.init() for pasting
-            try:
+        try:
+            if not WEB and not hasattr(pygame.scrap, "get_text"):      # old pygame needs scrap.init()
                 pygame.scrap.init()
-            except (pygame.error, AttributeError):
-                pass
+        except Exception:     # no clipboard support (browser)
+            pass
         pygame.key.stop_text_input()
         self.clock = pygame.time.Clock()
         self.data = save.load()
         self.audio = Audio()
         self.audio.enabled = self.data["sound"]
         self.audio.music_on = self.data["music"]
-        self.relay = Relay(self.data["player_id"], self.data.get("name") or "Player")
+        self.audio.set_volumes(self.data["volume"])
+        render.QUALITY = self.data["graphics"]
+        if self.data["fullscreen"]:
+            try:
+                pygame.display.toggle_fullscreen()
+            except pygame.error:
+                self.data["fullscreen"] = False
+        self.progress = Progress(self)
+        self.data.setdefault("best_vehicle", {})
+        self.relay = (OfflineRelay if WEB else Relay)(self.data["player_id"], self.data.get("name") or "Player")
+        self.fingers = {}
+        for st_key, best in self.data["best"].items():
+            if best > 0:
+                self.relay.post_best(st_key, best, self.data["best_vehicle"].get(st_key, "jeep"))
         for num in self.data["friends"]:
             self.relay.watch(num)
         self.invite = None
@@ -90,6 +116,11 @@ class App:
                         "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
                         "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
         self.screens["home"] = home.HomeMenu(self)
+        self.screens["settings"] = ui.Settings(self)
+        self.screens["trophies"] = ui.TrophyRoom(self)
+        self.screens["leaderboard"] = ui.Leaderboard(self)
+        self.recorder = None
+        self.ghost = None
         self.state = "home"
         self.run = None
         self.results = None
@@ -132,6 +163,17 @@ class App:
     def quit(self):
         self.running = False
 
+    def apply_graphics(self):
+        render.QUALITY = self.data["graphics"]
+
+    def toggle_fullscreen(self):
+        try:
+            pygame.display.toggle_fullscreen()
+            self.data["fullscreen"] = not self.data["fullscreen"]
+            self.persist()
+        except pygame.error:
+            pass
+
     def goto(self, state, message=""):
         self.audio.engine_stop()
         self.audio.music("menu")
@@ -143,6 +185,10 @@ class App:
             pygame.key.stop_text_input()
         if state == "lobby":
             self.screens["lobby"].enter()
+        if state == "settings":
+            self.screens["settings"].enter()
+        if state == "leaderboard":
+            self.screens["leaderboard"].enter()
 
     def world_for(self, stage):
         key = stage["key"]
@@ -163,7 +209,10 @@ class App:
         self.remote_bubbles.clear()
         self.run = Run(stage, terrain, spec, self.data["levels"][spec["key"]], self.data["coins"],
                        self.data["best"].get(stage["key"], 0), self.audio, self.hud, driver=self.data["driver"],
-                       horn=self.data["horn"], online=self.session, mode=mode, race_m=race_m)
+                       horn=self.data["horn"], online=self.session, mode=mode, race_m=race_m, progress=self.progress)
+        self.run.counted = False
+        self.recorder = ghost.Recorder(self.run) if mode == "solo" else None
+        self.ghost = ghost.load(stage["key"]) if mode == "solo" and self.data.get("ghosts", True) else None
         self.run_stage = stage
         self.pause = None
         self.mouse_pedal = None
@@ -171,12 +220,26 @@ class App:
         pygame.key.stop_text_input()
         self.audio.engine_stop()
         self.audio.engine_start(spec["sound"])
-        self.audio.music("drive")
+        track = self.data["music_track"]
+        self.audio.music(music.STAGE_MUSIC.get(stage["key"], "drive") if track == "auto" else track)
 
     def start_run(self):
         self._begin_run(self.stage)
 
+    def start_daily(self):
+        d = self.progress.daily()
+        self.data["stage"], self.data["vehicle"] = d["stage"]["key"], d["vehicle"]["key"]
+        self.persist()
+        self.start_run()
+
+    def _count_run(self):
+        run = self.run
+        if run is not None and not getattr(run, "counted", True):
+            run.counted = True
+            self.progress.run_over(run)
+
     def _bank_run_coins(self):
+        self._count_run()
         if self.run is not None and self.run.coins:
             self.data["coins"] += self.run.coins
             self.run.coins = 0
@@ -189,6 +252,10 @@ class App:
         record = run.distance > best
         if record:
             self.data["best"][key] = run.distance
+            self.data["best_vehicle"][key] = run.spec["key"]
+            self.relay.post_best(key, run.distance, run.spec["key"])
+            if self.recorder:
+                self.recorder.save(key, run.distance)
         coins = run.coins
         self._bank_run_coins()
         run.coins = coins            # keep the total for the results screen
@@ -289,38 +356,70 @@ class App:
             self.goto("lobby")
 
     # ---------------------------------------------------------------- loop
+    def frame(self):
+        dt = min(0.05, self.clock.tick(FPS) / 1000)
+        self.now += dt
+        mouse = pygame.mouse.get_pos()
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                self.running = False
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_F11:
+                self.toggle_fullscreen()
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_m and self.state != "online":
+                self.toggle_music()
+            elif ev.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+                self.touch(ev)
+            else:
+                self.handle(ev)
+        if not self.running:
+            return
+        self._poll_session(dt)
+        self.audio.tick()
+        if self.state in self.screens:
+            if self.state == "lobby" and self.session is None:
+                self.goto("online")
+            self.screens[self.state].draw(self.screen, mouse, self.now)
+        elif self.state == "play":
+            self.play_frame(dt, mouse)
+        elif self.state == "results":
+            self.results.draw(self.screen, mouse, self.now, dt)
+        self.hud.draw_toasts(self.screen, dt)
+        if self.invite is not None:
+            self.invite_popup.draw(self.screen, mouse, self.invite)
+        self.window.blit(self.screen, (0, 0))
+        pygame.display.flip()
+
+    def touch(self, ev):
+        """Multi-touch for phones: every finger can hold its own pedal (gas + boost together)."""
+        if self.state != "play":
+            return
+        pos = (ev.x * gfx.W, ev.y * gfx.H)
+        if ev.type == pygame.FINGERUP:
+            self.fingers.pop(ev.finger_id, None)
+            return
+        hit = self.hud.hit(pos, self.run.seized if self.run else False)
+        if ev.type == pygame.FINGERDOWN:
+            if hit == "repair":
+                self.run.repair()
+            elif hit == "horn":
+                self.run.honk()
+            elif hit == "pause":
+                self.open_pause()
+        self.fingers[ev.finger_id] = hit
+
     def loop(self):
         while self.running:
-            dt = min(0.05, self.clock.tick(FPS) / 1000)
-            self.now += dt
-            mouse = pygame.mouse.get_pos()
-            for ev in pygame.event.get():
-                if ev.type == pygame.QUIT:
-                    self.running = False
-                elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_F11:
-                    try:
-                        pygame.display.toggle_fullscreen()
-                    except pygame.error:
-                        pass
-                elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_m and self.state != "online":
-                    self.toggle_music()
-                else:
-                    self.handle(ev)
-            if not self.running:
-                break
-            self._poll_session(dt)
-            if self.state in self.screens:
-                if self.state == "lobby" and self.session is None:
-                    self.goto("online")
-                self.screens[self.state].draw(self.screen, mouse, self.now)
-            elif self.state == "play":
-                self.play_frame(dt, mouse)
-            elif self.state == "results":
-                self.results.draw(self.screen, mouse, self.now, dt)
-            if self.invite is not None:
-                self.invite_popup.draw(self.screen, mouse, self.invite)
-            self.window.blit(self.screen, (0, 0))
-            pygame.display.flip()
+            self.frame()
+        self.shutdown()
+
+    async def loop_async(self):
+        """The same loop for the browser, which needs to get control back every frame."""
+        while self.running:
+            self.frame()
+            await asyncio.sleep(0)
+        self.shutdown()
+
+    def shutdown(self):
         if self.session:
             self.session.leave()
         self.relay.close()
@@ -360,8 +459,15 @@ class App:
                     self.leave_session()
                 elif act == "lobby":
                     ses.back_to_lobby()
+                elif act == "next":
+                    self._bank_run_coins()
+                    ses.next_round()
             elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_RETURN and ses.is_host:
-                ses.back_to_lobby()
+                if ses.tour and ses.tour["round"] < ses.tour["rounds"]:
+                    self._bank_run_coins()
+                    ses.next_round()
+                else:
+                    ses.back_to_lobby()
             return
         if self.pause:
             act = None
@@ -416,9 +522,10 @@ class App:
     def play_frame(self, dt, mouse):
         run, ses = self.run, self.session
         keys = pygame.key.get_pressed()
-        gas = any(keys[k] for k in GAS_KEYS) or self.mouse_pedal == "gas"
-        brake = any(keys[k] for k in BRAKE_KEYS) or self.mouse_pedal == "brake"
-        boost = any(keys[k] for k in BOOST_KEYS) or self.mouse_pedal == "boost"
+        touch = set(self.fingers.values())
+        gas = any(keys[k] for k in GAS_KEYS) or self.mouse_pedal == "gas" or "gas" in touch
+        brake = any(keys[k] for k in BRAKE_KEYS) or self.mouse_pedal == "brake" or "brake" in touch
+        boost = any(keys[k] for k in BOOST_KEYS) or self.mouse_pedal == "boost" or "boost" in touch
         frozen = self.pause is not None and not run.online
         racing_over = ses is not None and ses.results is not None
         if self.pause or racing_over:
@@ -427,6 +534,16 @@ class App:
             run.update(dt, gas, brake, boost)
             self.hud.update(dt)
         darkness, sunset = lighting.phase_info(run.stage, run.time)
+        run.is_night = darkness > 0.5
+        if self.recorder and not frozen:
+            self.recorder.record(run, dt)
+        daily = self.progress.daily_progress(run) if not self.progress.daily_done() else None
+        if daily:
+            d, value = daily
+            unit = {"distance": " m", "flips": " flips", "coins": " coins", "air": " s air"}[d["kind"]]
+            run.daily_text = f"DAILY: {min(value, d['target']):.0f} / {d['target']}{unit}"
+        else:
+            run.daily_text = None
         in_tunnel = run.terrain.feature_at(run.car.x) == "tunnel"
         run.lights_on = run.lights_forced if run.lights_forced is not None else (darkness > 0.22 or in_tunnel)
 
@@ -435,6 +552,10 @@ class App:
             self._online_tick(dt, run, ses, views)
             if run.mode == "race":
                 race = self._race_info(run, ses)
+        if self.ghost and run.mode == "solo":
+            self.ghost.update(run.time)
+            views.insert(0, CarView(self.ghost.car, self.ghost.driver, label=f"BEST {self.ghost.distance} m",
+                                    color=(200, 220, 255), ghost=True))
         views.append(CarView(run.car, run.driver, run.wobble, run.lights_on, bubble=run.bubble))
         self.world.draw(self.screen, run.cam, views, run.particles, self.now, 0 if frozen else dt, run.best,
                         darkness, sunset, run.race_m)
@@ -446,6 +567,9 @@ class App:
             gfx.blit_text(self.screen, "cond", 26, "Finished! Waiting for the others...", (255, 255, 255),
                           (gfx.W / 2, gfx.H * 0.55), "center", outline=(20, 20, 24), width=2)
         if racing_over:
+            if not getattr(ses, "_counted_results", False):
+                ses._counted_results = True
+                self.progress.online_race(bool(ses.results) and ses.results[0][0] == ses.my_id)
             self.race_board.draw(self.screen, mouse, ses.results)
         if self.pause:
             self.pause.draw(self.screen, mouse)
@@ -514,8 +638,15 @@ class App:
         return dict(players=players, distance=run.race_m, pos=pos)
 
 
+async def main_async():
+    await App().loop_async()
+
+
 def main():
-    App().loop()
+    if WEB:
+        asyncio.run(main_async())
+    else:
+        App().loop()
 
 
 if __name__ == "__main__":

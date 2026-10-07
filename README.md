@@ -2,6 +2,12 @@
 
 A 2D hill-climb driving game. Drive as far as you can over hills, bridges and tunnels, collect coins, pull off flips, upgrade your vehicles and race your friends online.
 
+## Play in the browser (phones too)
+
+**https://renyxwebdesigning.github.io/Hillclimb-bruh/**
+
+Works on any computer or phone (hold the phone sideways). Online play and driver voices need the download version.
+
 ## Download and play (no installing)
 
 | Computer | Download |
@@ -46,11 +52,13 @@ The on-screen pedals, boost and horn buttons also work with the mouse.
 
 ## Features
 
-- 4 stages: Countryside, Desert, Arctic (slippery) and Moon (low gravity). The first three have a day/night cycle with headlights.
-- 6 vehicles: Jeep, Dirt Bike, Chopper, Monster Truck, Supercar and Rocket, each with its own upgrades (engine, suspension, tires, boost).
-- 11 drivers to choose from, each with their own voice.
-- Bridges over gorges, tunnels through hills, coins, air-time and flip bonuses.
+- 8 maps: Countryside, Desert, Arctic, Moon, City, Volcano (jump the lava pits!), Jungle and Mars. Most have a day/night cycle with headlights and street lamps.
+- 9 vehicles: Jeep, Dirt Bike, Chopper, Monster Truck, Supercar, Rocket, Tank, Police Car (siren!) and Hoverboard, each with its own upgrades (engine, suspension, tires, boost).
+- 13 drivers to choose from, each with their own voice.
+- Bridges, tunnels, coins, air-time and flip bonuses, 40 secret trophies and 16 achievements (Trophy Room).
+- Daily challenge, ghost of your best run, world leaderboard, online races and 4-race tournaments.
 - Random engine seizures: black smoke, a swearing driver, and 5-30 hits of Enter to fix.
+- 5 music tracks to choose from, volume settings, graphics quality.
 
 ## Running from the source code
 

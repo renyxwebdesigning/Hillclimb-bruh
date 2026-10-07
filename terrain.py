@@ -12,6 +12,7 @@ import math
 import numpy as np
 
 from config import coin_value_at
+from progress import place_trophies
 
 RES = 0.25          # metres between height samples
 START = -60.0       # world x of the first sample
@@ -51,7 +52,7 @@ class Terrain:
             h += amp * _catmull_rom_noise((xs - START) / wavelength, rng)
         h *= difficulty
 
-        if stage["key"] == "moon":
+        if stage["key"] in ("moon", "mars"):
             c = 70.0
             while c < LENGTH:
                 w = rng.uniform(4.0, 9.0)
@@ -69,25 +70,44 @@ class Terrain:
         self._tunnel_a = [a for a, _ in self.tunnels]
         self.fuel, self.coins = self._place_pickups(np.random.default_rng(stage["seed"] + 1))
         self.props = self._place_props(np.random.default_rng(stage["seed"] + 3))
+        self.trophies = place_trophies(self, __import__("random").Random(stage["seed"] * 31))
 
     # ----------------------------------------------------------- features
     def _build_features(self, xs, h, rng):
         """Cut gorges under bridges and raise hills over tunnels (modifies h)."""
         v = h.copy()
         ceil = np.full(len(h), INF)
-        self.bridges, self.tunnels = [], []
+        self.bridges, self.tunnels, self.pits = [], [], []
         water = self.stage["water"]
+        lava = self.stage.get("lava", False)
         x = 330.0 + rng.uniform(0, 60)
         while x < LENGTH - 300:
-            bridge = rng.random() < 0.55
+            roll = rng.random()
+            kind = ("bridge" if roll < 0.35 else "tunnel" if roll < 0.65 else "pit") if lava else \
+                ("bridge" if roll < 0.55 else "tunnel")
+            bridge = kind == "bridge"
             for _ in range(14):
-                span = rng.uniform(13, 22) if bridge else rng.uniform(26, 42)
+                span = rng.uniform(13, 22) if bridge else rng.uniform(5, 7.5) if kind == "pit" else rng.uniform(26, 42)
                 ia, ib = int((x - START) / RES), int((x + span - START) / RES)
-                if abs(h[ib] - h[ia]) <= 0.1 * span:
+                if abs(h[ib] - h[ia]) <= (0.08 * span if kind == "pit" else 0.1 * span):
                     break
                 x += 7.0
             else:
                 x += 90.0
+                continue
+            if kind == "pit":
+                # A kicker ramp, then a lava pit you have to jump.
+                r0 = int((x - 10 - START) / RES)
+                seg = slice(r0, ia + 1)
+                u = (xs[seg] - xs[r0]) / (xs[ia] - xs[r0])
+                lift = 1.6 * u ** 2.4
+                h[seg] += lift
+                v[seg] += lift
+                level = min(h[ia], h[ib]) - 1.8
+                h[ia + 1:ib] = level - 3.0
+                v[ia + 1:ib] = level - 3.0
+                self.pits.append((float(xs[ia]), float(xs[ib]), float(level)))
+                x += span + rng.uniform(230, 480)
                 continue
             sl = slice(ia, ib + 1)
             t = (xs[sl] - xs[ia]) / (xs[ib] - xs[ia])
@@ -126,6 +146,15 @@ class Terrain:
         for a, b in self.tunnels:
             if a - pad <= x <= b + pad:
                 return "tunnel"
+        for a, b, _ in self.pits:
+            if a - pad - 10 <= x <= b + pad:
+                return "pit"
+        return None
+
+    def pit_at(self, x):
+        for a, b, level in self.pits:
+            if a <= x <= b:
+                return a, b, level
         return None
 
     # ------------------------------------------------------------ queries
@@ -248,7 +277,8 @@ class Terrain:
                 continue
             slope = abs(self.visual_height(x + 0.6) - self.visual_height(x - 0.6)) / 1.2
             kind = kinds[int(rng.integers(len(kinds)))]
-            if slope > 0.55 and kind not in ("rock", "moonrock", "flowers", "skull"):
+            if slope > 0.55 and kind not in ("rock", "moonrock", "flowers", "skull", "cone", "lavarock", "marsrock",
+                                              "fern", "mushroom"):
                 continue
             props.append((x, kind, float(rng.uniform(0.8, 1.2)), bool(rng.random() < 0.5)))
         return props

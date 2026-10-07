@@ -33,6 +33,10 @@ DRIVERS = [
          lines=["Kä Luscht!", "Gopferdeckel!", "Huere Mischt!"]),
     dict(key="greta", name="Greta Thunberg", voice=("en-us+f2", 66, 160),
          lines=["How dare you, engine!", "You have stolen my horsepower!", "Blah, blah, blah!"]),
+    dict(key="arnold", name="Arnold Schwarzenegger", voice=("en-us", 18, 135),
+         lines=["I'll be back!", "Hasta la vista, engine!", "Get to the choppa!"]),
+    dict(key="federer", name="Roger Federer", voice=("de", 52, 160),
+         lines=["Come on!", "Oh nei, das isch jetzt blöd!", "Hopp Schwiiz!"]),
     dict(key="lutz", name="Lutz Wittenberg", voice=("de", 44, 155),
          lines=["Gopferdammi nomal!", "Ja Sapperlot!", "Das darf doch nöd wahr si!"]),
 ]
@@ -557,8 +561,69 @@ def _greta(p):
     p.ell(tie, 0.95, -1.9, 0.2, 0.14, OUT, 0.02)
 
 
+def _arnold(p):
+    skin = (226, 170, 132)
+    hair = (64, 46, 34)
+    neck(p, skin, 0.5)
+    p.fill((26, 24, 26), [(-1.85, -2.0), (-1.7, -1.35), (-0.9, -1.05), (0.9, -1.05), (1.7, -1.35), (1.85, -2.0)])
+    for sd in (-1, 1):                                       # leather jacket collar
+        p.fill((44, 40, 42), [(sd * 0.3, -1.05), (sd * 0.95, -1.05), (sd * 0.7, -1.6), (sd * 0.35, -1.45)], smooth=False)
+    p.line((150, 150, 156), [(0.0, -1.2), (0.0, -2.0)], 0.04, False)
+    ears(p, skin, x=0.9)
+    pts = [(0, 1.0), (0.66, 0.9), (0.94, 0.4), (0.96, -0.2), (0.9, -0.66), (0.55, -0.98), (0.0, -1.02), (-0.55, -0.98),
+           (-0.9, -0.66), (-0.96, -0.2), (-0.94, 0.4), (-0.66, 0.9)]
+    head(p, skin, pts)
+    p.masked(pts, lambda q: [q.line(gfx.shade(skin, 0.8), [(sd * 0.3, -0.25), (sd * 0.42, -0.6)], 0.03)
+                             for sd in (-1, 1)])
+    p.line(gfx.shade(skin, 0.7), [(-0.5, 0.36), (0.5, 0.36)], 0.12, False)       # heavy brow
+    for sd in (-1, 1):                                       # Terminator shades
+        lens = [(sd * 0.05, 0.3), (sd * 0.6, 0.3), (sd * 0.62, 0.12), (sd * 0.5, 0.0), (sd * 0.12, 0.0), (sd * 0.05, 0.12)]
+        p.shape((20, 20, 24), lens, smooth=False, ow=0.03)
+        p.line((120, 130, 150), [(sd * 0.18, 0.24), (sd * 0.38, 0.24)], 0.04, False)
+    p.line((20, 20, 24), [(-0.06, 0.24), (0.06, 0.24)], 0.06, False)
+    nose(p, skin, w=0.24, length=0.42)
+    p.line((150, 80, 70), [(-0.24, -0.58), (0.05, -0.6), (0.26, -0.54)], 0.05)
+    p.ell(gfx.shade(skin, 0.86), 0.0, -0.86, 0.4, 0.12)
+    draw_hair(p, hair, [(-0.94, 0.4), (-0.96, 0.92), (-0.85, 1.14), (0.0, 1.16), (0.85, 1.14), (0.96, 0.92), (0.94, 0.4)],
+              [(-0.94, 0.4), (-0.8, 0.82), (0.0, 0.86), (0.8, 0.82), (0.94, 0.4)],
+              strands=[[(-0.7, 1.08), (0.7, 1.08)]], hi=gfx.shade(hair, 1.4))
+
+
+def _federer(p):
+    skin = (238, 200, 176)
+    hair, hair_dk = (92, 64, 44), (64, 44, 30)
+    p.fill(hair_dk, [(-1.0, 0.5), (-1.08, -0.2), (-0.95, -0.55), (-0.7, -0.3), (0.7, -0.3), (0.95, -0.55),
+                     (1.08, -0.2), (1.0, 0.5), (0.0, 1.1)])
+    neck(p, skin, 0.34)
+    p.fill((250, 250, 250), [(-1.6, -2.0), (-1.45, -1.38), (-0.85, -1.12), (0.85, -1.12), (1.45, -1.38), (1.6, -2.0)])
+    for sd in (-1, 1):                                       # polo collar
+        p.shape((240, 240, 242), [(sd * 0.05, -1.1), (sd * 0.6, -1.0), (sd * 0.48, -1.38)], smooth=False, ow=0.025)
+    ears(p, skin, x=0.82)
+    pts = face_pts(width=0.9, jaw=0.86, length=1.06)
+    head(p, skin, pts)
+
+    def stubble(q):
+        for i in range(40):
+            a = math.pi * (1.1 + 0.8 * (i / 40))
+            r = 0.7 + 0.25 * ((i * 7) % 5) / 5
+            q.ell((170, 140, 120), math.cos(a) * r * 0.9, math.sin(a) * r - 0.1, 0.035, 0.035)
+    p.masked(pts, stubble)
+    for x in (-0.32, 0.32):
+        eye(p, x, 0.08, (110, 80, 52), w=0.3, h=0.16, look=0.03)
+        brow(p, x, 0.3, 0.3, hair_dk, angle=-0.1 if x < 0 else 0.1, thick=0.07)
+    nose(p, skin, w=0.2, length=0.46)
+    smile(p, y=-0.6, w=0.5, open_=0.1)
+    draw_hair(p, hair, [(-0.92, 0.2), (-1.02, 0.7), (-0.7, 1.12), (0.0, 1.26), (0.7, 1.12), (1.02, 0.7), (0.92, 0.2)],
+              [(-0.92, 0.2), (-0.78, 0.5), (0.0, 0.66), (0.78, 0.5), (0.92, 0.2)],
+              strands=[[(-0.6, 1.0), (0.0, 1.14), (0.6, 1.0)]])
+    band = [(-0.98, 0.56), (-0.5, 0.74), (0.0, 0.78), (0.5, 0.74), (0.98, 0.56), (0.96, 0.4), (0.5, 0.58), (0.0, 0.62),
+            (-0.5, 0.58), (-0.96, 0.4)]
+    p.shape((252, 252, 252), band, ow=0.03)
+
+
 DRAW = {"default": _default, "trump": _trump, "putin": _putin, "bonnie": _bonnie, "mozart": _mozart,
-        "einstein": _einstein, "roesti": _roesti, "blocher": _blocher, "maurer": _maurer, "greta": _greta}
+        "einstein": _einstein, "roesti": _roesti, "blocher": _blocher, "maurer": _maurer, "greta": _greta,
+        "arnold": _arnold, "federer": _federer}
 
 
 def _photo(radius_px):

@@ -1,6 +1,9 @@
 """Tuning constants, stages, vehicles and upgrade tables."""
 
+import sys
+
 TITLE = "Hill Rider"
+WEB = sys.platform == "emscripten"     # running in a web browser (pygbag)
 FPS = 60
 PHYS_DT = 1 / 500          # fixed physics step (s)
 BASE_PPM = 56              # pixels per metre at 720p, before speed zoom-out
@@ -54,6 +57,52 @@ STAGES = [
         top_depth=0.22, water=None, cave=(44, 42, 58),
         octaves=[(84, 8.0), (31, 3.8), (10, 1.2), (4, 0.2)],
         decor="space", props=("moonrock", "moonrock", "dish", "flag", "moonrock"), cycle=False, base_dark=0.35,
+    ),
+]
+STAGES += [
+    dict(
+        key="city", name="City", seed=61,
+        gravity=9.8, grip=1.02,
+        sky=((96, 150, 214), (214, 226, 238)),
+        far=((150, 168, 196), (110, 126, 156)),
+        ground=(120, 112, 108), pebble=(104, 96, 92), pebble_hi=(150, 142, 136),
+        top=(70, 72, 78), top_hi=(110, 112, 120), top_lo=(46, 46, 52),
+        top_depth=0.36, water=(70, 120, 170), cave=(40, 40, 46),
+        octaves=[(80, 7.0), (32, 3.6), (12, 0.6), (5, 0.08)],
+        decor="city", props=("lamp", "lamp", "car", "hydrant", "cone", "bin", "sign"), cycle=True,
+    ),
+    dict(
+        key="volcano", name="Volcano", seed=71,
+        gravity=9.8, grip=0.95,
+        sky=((60, 18, 20), (196, 80, 40)),
+        far=((70, 34, 34), (48, 26, 28)),
+        ground=(62, 52, 54), pebble=(48, 40, 42), pebble_hi=(150, 60, 30),
+        top=(92, 82, 82), top_hi=(130, 118, 116), top_lo=(52, 44, 46),
+        top_depth=0.28, water=(255, 110, 20), lava=True, cave=(36, 22, 20),
+        octaves=[(70, 10.0), (26, 5.5), (10, 1.6), (4, 0.25)],
+        decor="volcano", props=("deadtree", "lavarock", "vent", "lavarock", "skull"), cycle=False, base_dark=0.12,
+    ),
+    dict(
+        key="jungle", name="Jungle", seed=81,
+        gravity=9.8, grip=0.9,
+        sky=((80, 150, 140), (200, 230, 200)),
+        far=((90, 150, 110), (52, 118, 74)),
+        ground=(96, 64, 40), pebble=(76, 50, 30), pebble_hi=(120, 86, 56),
+        top=(56, 150, 50), top_hi=(110, 196, 70), top_lo=(30, 104, 36),
+        top_depth=0.42, water=(70, 150, 140), cave=(30, 42, 24),
+        octaves=[(66, 10.0), (25, 5.5), (10, 1.8), (4, 0.3)],
+        decor="jungle", props=("palm", "palm", "fern", "bigflower", "mushroom", "fern", "rock"), cycle=True,
+    ),
+    dict(
+        key="mars", name="Mars", seed=91,
+        gravity=3.7, grip=0.85,
+        sky=((196, 120, 90), (240, 196, 160)),
+        far=((176, 96, 64), (150, 76, 50)),
+        ground=(176, 86, 50), pebble=(150, 70, 40), pebble_hi=(210, 120, 80),
+        top=(214, 130, 84), top_hi=(236, 164, 116), top_lo=(168, 92, 58),
+        top_depth=0.24, water=None, cave=(80, 36, 24),
+        octaves=[(88, 9.0), (32, 4.2), (11, 1.3), (4, 0.2)],
+        decor="mars", props=("marsrock", "marsrock", "rover", "dish", "marsrock"), cycle=False, base_dark=0.0,
     ),
 ]
 STAGE_BY_KEY = {s["key"]: s for s in STAGES}
@@ -136,6 +185,43 @@ VEHICLES = [
         engine=(-1.6, 0.1), lights=[(2.2, 0.1)], tail=[],
         rig="gear", sound="rocket", head_art="astro", wheel_art=("solid", "solid"),
         head_behind=True,
+    ),
+]
+VEHICLES += [
+    dict(
+        key="tank", name="Tank", tagline="Slow. Heavy. Unstoppable.",
+        mass=700, inertia=780, rest=0.3, ext=(0.12, 0.42),
+        wheels=[(-1.35, -0.28, 0.42, 70, 0.5), (1.35, -0.28, 0.42, 70, 0.5)],
+        torque=(3400, 380), spin=(19, 1.8), spring=(60000, 4000), damping=(7000, 500),
+        grip=1.3, air_torque=4200, thrust=(0, 0), boost=(7200, 500), fuel_rate=1.4,
+        hull=[(-2.0, -0.2), (2.05, -0.2), (2.0, 0.35), (-2.0, 0.35), (-1.0, 0.95), (0.9, 0.95), (2.9, 0.75),
+              (-1.6, 0.6)],
+        head=(-0.35, 1.35), head_r=0.27, exhaust=(-2.0, 0.3), nozzle=(-2.1, 0.2),
+        engine=(-1.4, 0.45), lights=[(2.02, 0.18)], tail=[(-2.02, 0.2)],
+        rig="tank", sound="tank", head_art="helmet_green", wheel_art=("sprocket", "sprocket"),
+    ),
+    dict(
+        key="police", name="Police Car", tagline="Siren on the horn key",
+        mass=250, inertia=240, rest=0.3, ext=(0.13, 0.42),
+        wheels=[(-1.25, -0.12, 0.4, 24, 0.6), (1.3, -0.12, 0.4, 24, 0.4)],
+        torque=(860, 110), spin=(44, 4.2), spring=(24000, 1800), damping=(2200, 180),
+        grip=1.0, air_torque=1400, thrust=(0, 0), boost=(3000, 230), fuel_rate=1.1,
+        hull=[(-2.05, -0.15), (-1.95, -0.35), (1.95, -0.35), (2.08, -0.12), (1.9, 0.35), (0.85, 0.42),
+              (0.4, 0.95), (-0.9, 0.95), (-1.4, 0.45), (-2.05, 0.35)],
+        head=(-0.15, 0.62), head_r=0.27, exhaust=(-2.08, -0.22), nozzle=(-2.1, 0.05),
+        engine=(1.4, 0.3), lights=[(2.02, 0.15)], tail=[(-2.04, 0.18)], lightbar=[(-0.55, 1.04), (-0.1, 1.04)],
+        rig="strut", sound="police", head_art="police", wheel_art=("sport", "sport"), head_behind=True,
+    ),
+    dict(
+        key="hoverboard", name="Hoverboard", tagline="Glides, slides and flies",
+        mass=70, inertia=30, rest=0.32, ext=(0.12, 0.5),
+        wheels=[(-0.55, -0.1, 0.36, 14, 0.5), (0.55, -0.1, 0.36, 14, 0.5)],
+        torque=(110, 14), spin=(46, 4.0), spring=(3600, 300), damping=(320, 30),
+        grip=0.72, air_torque=360, thrust=(380, 40), boost=(1100, 90), fuel_rate=0.9,
+        hull=[(-0.85, -0.05), (0.85, -0.05), (0.2, 1.0), (-0.2, 1.0), (0.0, 1.5)],
+        head=(0.05, 1.78), head_r=0.2, exhaust=(-0.8, 0.0), nozzle=(-0.85, 0.02),
+        engine=(0.0, 0.05), lights=[(0.85, 0.05)], tail=[(-0.85, 0.05)],
+        rig="hover", sound="hover", head_art="helmet", wheel_art=("none", "none"),
     ),
 ]
 VEHICLE_BY_KEY = {v["key"]: v for v in VEHICLES}

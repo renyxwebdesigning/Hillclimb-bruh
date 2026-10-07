@@ -8,7 +8,6 @@ import json
 import queue
 import socket
 import threading
-import urllib.request
 
 PORT = 47777
 VERSION = 2
@@ -191,6 +190,7 @@ def local_addresses():
 def fetch_public_ip(callback):
     """Look up the public internet address in the background (for inviting friends)."""
     def run():
+        import urllib.request
         try:
             with urllib.request.urlopen("https://api.ipify.org", timeout=4) as r:
                 callback(r.read().decode().strip())

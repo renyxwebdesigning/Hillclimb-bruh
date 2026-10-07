@@ -171,6 +171,7 @@ class Hud:
         self.coin_img = sprites.coin(5, si(13))
         self.popups = []
         self.notices = []
+        self.toasts = []
         W, H = gfx.W, gfx.H
         self.brake_rect = self.brake_img.get_rect(bottomleft=(s(26), H - s(34)))
         self.gas_rect = self.gas_img.get_rect(bottomright=(W - s(26), H - s(34)))
@@ -185,6 +186,32 @@ class Hud:
 
     def notice(self, text, color):
         self.notices.append([text, color, 0.0])
+
+    def toast(self, title, sub):
+        self.toasts.append([title, sub, 0.0])
+
+    def draw_toasts(self, surf, dt):
+        if not self.toasts:
+            return
+        t = self.toasts[0]
+        t[2] += dt
+        if t[2] > 3.6:
+            self.toasts.pop(0)
+            return
+        k = min(1.0, t[2] / 0.3, (3.6 - t[2]) / 0.3)
+        box = pygame.Rect(0, 0, s(560), s(78))
+        box.midtop = (gfx.W / 2, s(-80) + s(150) * k)
+        pygame.draw.rect(surf, (24, 24, 28), box, border_radius=si(14))
+        pygame.draw.rect(surf, (255, 204, 48), box, si(3), border_radius=si(14))
+        cup = self._cup()
+        surf.blit(cup, cup.get_rect(midleft=(box.x + s(14), box.centery)))
+        gfx.blit_text(surf, "cond", 24, t[0], (255, 220, 80), (box.x + s(74), box.y + s(12)))
+        gfx.blit_text(surf, "cond", 18, t[1], WHITE, (box.x + s(74), box.y + s(44)))
+
+    def _cup(self):
+        if not hasattr(self, "_cup_img"):
+            self._cup_img = sprites.trophy(int(s(50)))
+        return self._cup_img
 
     def clear(self):
         self.popups.clear()
@@ -268,6 +295,9 @@ class Hud:
         surf.blit(self.coin_img, (x + s(1), y))
         gfx.blit_text(surf, "cond", 22, gfx.fmt(run.bank + run.coins), WHITE, (x + s(32), y - s(2)),
                       outline=INK, width=2)
+        daily = getattr(run, "daily_text", None)
+        if daily:
+            gfx.blit_text(surf, "cond", 18, daily, (255, 214, 80), (x + s(2), y + s(30)), outline=INK, width=2)
         if race:
             self._draw_race(surf, run, race)
 

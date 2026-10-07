@@ -198,8 +198,7 @@ class Vehicle:
 
         # The driver's head: hitting the ground or a tunnel roof ends the run.
         hx, hy = self.HEAD[0] * c - self.HEAD[1] * s + self.x, self.HEAD[0] * s + self.HEAD[1] * c + self.y
-        hnx, hny = terrain.normal(hx)
-        clearance = (hy - terrain.height(hx)) * hny - self.HEAD_R
+        clearance = terrain.distance(hx, hy, self.HEAD_R + 0.6)[0] - self.HEAD_R
         hit = terrain.rock(hx, hy, self.HEAD_R)
         if hit:
             clearance = min(clearance, -hit[2])

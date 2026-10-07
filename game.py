@@ -12,10 +12,21 @@ START_X = 2.0
 
 class Run:
     def __init__(self, stage, terrain, spec, levels, bank, best, audio, hud, driver="default",
-                 horn="puppy", online=None, mode="solo", race_m=0):
+                 horn="puppy", online=None, mode="solo", race_m=0, progress=None):
         self.stage, self.terrain, self.audio, self.hud = stage, terrain, audio, hud
         self.spec, self.driver, self.horn_kind = spec, driver, horn
         self.online, self.mode, self.race_m = online, mode, race_m
+        self.progress = progress
+        self.flips = 0
+        self.max_air = 0.0
+        self.pits_cleared = 0
+        self.night_m = 0.0
+        self.is_night = False
+        self._next_pit = 0
+        self._live_t = 0.0
+        self._last_x = START_X
+        for t in terrain.trophies:
+            t[3] = bool(progress and progress.has_trophy(stage["key"], t[2]))
         self.stats = vehicle_stats(spec, levels)
         self._lift = max(spec["rest"] + w[2] - w[1] for w in spec["wheels"]) + 0.05
         self.car = Vehicle(START_X, terrain.height(START_X) + self._lift, spec, self.stats)
@@ -91,6 +102,9 @@ class Run:
                 self._land_vy = car.vy
         if steps == 50:
             self._acc = 0.0
+        if not (math.isfinite(car.x) and math.isfinite(car.y) and abs(car.vx) + abs(car.vy) < 400):
+            self._respawn()                 # physics went wild: put the vehicle back on the road
+            car = self.car
 
         if self.state == "drive":
             if car.head_hit and self.respawn_t is None:
@@ -104,6 +118,7 @@ class Run:
                 self._stunts(dt)
                 self._maybe_seize(dt, g)
                 self._check_finish()
+                self._check_lava()
         else:
             self.end_t += dt
             if self.end_t > 2.2:
@@ -114,6 +129,20 @@ class Run:
         self.fix_shake = max(0.0, self.fix_shake - dt)
         self._horn_t = max(0.0, self._horn_t - dt)
         self.distance = max(self.distance, int(max(0.0, car.x - START_X)))
+        if self.state == "drive":
+            if self.is_night and car.x > self._last_x:
+                self.night_m += car.x - self._last_x
+            pits = self.terrain.pits
+            while self._next_pit < len(pits) and car.x > pits[self._next_pit][1] + 1.0:
+                if self._next_pit < len(pits) and pits[self._next_pit][1] < car.x and self.respawn_t is None:
+                    self.pits_cleared += 1
+                self._next_pit += 1
+            self._live_t -= dt
+            if self.progress and self._live_t <= 0:
+                self._live_t = 0.5
+                self.progress.live(self)
+                self.progress.daily_check(self)
+        self._last_x = car.x
         self._head_wobble(dt)
         self._effects(dt, g)
         self.particles.update(dt)
@@ -143,10 +172,29 @@ class Run:
         else:
             self.finish("DRIVER DOWN!")
 
+    def _check_lava(self):
+        pit = self.terrain.pit_at(self.car.x)
+        if pit and min(w.y - w.r for w in self.car.wheels) < pit[2] + 0.1:
+            self.audio.play("crash")
+            for _ in range(24):
+                self.particles.add("spark", self.car.x, pit[2], random.uniform(-3, 3), random.uniform(2, 7), 0.8,
+                                   0.09, random.choice(((255, 200, 60), (255, 110, 20), (255, 60, 20))), grav=8)
+            if self.online:
+                self.respawn_t = 1.2
+                self.hud.notice("BURNED!", (255, 120, 40))
+                self.outbox.append({"kind": "crash"})
+            else:
+                self.finish("BURNED IN LAVA!")
+
     def _respawn(self):
         self.respawn_t = None
+        if not math.isfinite(self.car.x):
+            self.car.x = START_X + self.distance
         x = max(START_X, self.car.x - 2.0)
-        if self.terrain.feature_at(x, 2.0) == "tunnel":
+        pit = self.terrain.pit_at(self.car.x) or self.terrain.pit_at(self.car.x + 3)
+        if pit:
+            x = pit[1] + 3.0
+        elif self.terrain.feature_at(x, 2.0) == "tunnel":
             x = self.car.x
         self.car = Vehicle(x, self.terrain.height(x) + self._lift + 0.2, self.spec, self.stats)
         self.car.engine_on = not self.seized
@@ -204,14 +252,17 @@ class Run:
             self.audio.play("restart")
             self.hud.notice("FIXED!", (120, 230, 90))
             self.outbox.append({"kind": "fixed"})
+            if self.progress:
+                self.progress.fixed(self)
 
     # --------------------------------------------------------------- horn
     def honk(self):
         if self._horn_t > 0:
             return
-        self._horn_t = 0.35 if self.horn_kind == "puppy" else 1.0
-        self.audio.play("horn_" + self.horn_kind)
-        self.outbox.append({"kind": "horn", "horn": self.horn_kind})
+        kind = "siren" if self.spec["key"] == "police" else self.horn_kind
+        self._horn_t = {"puppy": 0.35, "ship": 1.0, "siren": 1.5}[kind]
+        self.audio.play("horn_" + kind)
+        self.outbox.append({"kind": "horn", "horn": kind})
 
     def toggle_lights(self):
         self.lights_forced = not self.lights_on
@@ -221,6 +272,7 @@ class Run:
         car = self.car
         hx, hy = car.to_world(*car.HEAD)
         probes = [(car.x, car.y + 0.2, 1.25), (hx, hy, 0.5)] + [(w.x, w.y, 0.62) for w in car.wheels]
+        self._trophies(probes)
         coins = self.terrain.coins
         while self._coin_lo < len(coins) and coins[self._coin_lo][0] < car.x - 4:
             self._coin_lo += 1
@@ -242,6 +294,18 @@ class Run:
                         break
             i += 1
 
+    def _trophies(self, probes):
+        for t in self.terrain.trophies:
+            if t[3] or abs(t[0] - self.car.x) > 4:
+                continue
+            if any((t[0] - px) ** 2 + (t[1] - py) ** 2 < (pr + 0.55) ** 2 for px, py, pr in probes):
+                t[3] = True
+                for _ in range(16):
+                    self.particles.add("spark", t[0], t[1], random.uniform(-3, 3), random.uniform(-1, 4), 0.6, 0.09,
+                                       (255, 230, 120), grav=4, back=False)
+                if self.progress:
+                    self.progress.trophy(self, t[2])
+
     def _stunts(self, dt):
         car = self.car
         airborne = not car.grounded and not car.hull_contact
@@ -255,11 +319,13 @@ class Run:
             if car.grounded and not car.head_hit:
                 flips = int((abs(self._air_rot) + 0.6) / math.tau)
                 if flips:
+                    self.flips += flips
                     title = "FLIP" if flips == 1 else "DOUBLE FLIP" if flips == 2 else f"{flips}x FLIP"
                     self._award(title, FLIP_BONUS * flips)
                     if self._inverted_head < 0.5:
                         self._award("NECK FLIP", NECK_FLIP_BONUS)
                 t = self._air_t
+                self.max_air = max(self.max_air, t)
                 if t >= 1.0:
                     title = "AIR TIME" if t < 2.5 else "BIG AIR TIME" if t < 4 else "INSANE AIR TIME"
                     self._award(title, max(50, int(t * t * 60 / 25) * 25))

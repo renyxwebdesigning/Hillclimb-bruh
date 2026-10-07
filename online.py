@@ -5,11 +5,16 @@ vehicle and sends its pose 20 times a second. Other players' cars are drawn
 as smoothed "ghosts" (no collisions between cars), on the same track.
 """
 import math
+import random
 import time
 
 import net
 import relay as relay_mod
-from config import VEHICLE_BY_KEY
+from config import STAGES, VEHICLE_BY_KEY
+
+POINTS = [10, 7, 5, 3, 2, 1]
+TOUR_ROUNDS = 4
+TOUR_DISTANCE = 800
 
 COLORS = [(255, 214, 60), (90, 200, 255), (255, 110, 150), (130, 230, 90), (255, 150, 60),
           (190, 140, 255), (240, 240, 240), (80, 240, 210)]
@@ -106,6 +111,7 @@ class Session:
         self.error = None
         self.started = None
         self.to_lobby = False
+        self.tour = None
         self._send_t = 0.0
         self._first_finish = None
         self.welcomed = hosting
@@ -222,6 +228,7 @@ class Session:
             self.settings = msg["settings"]
         elif t == "start":
             self.settings = msg["settings"]
+            self.tour = self.settings.get("tour")
             self._begin()
         elif t == "state":
             car = self._remote(msg["id"])
@@ -231,6 +238,7 @@ class Session:
             self._event(msg["id"], msg["e"])
         elif t == "results":
             self.results = [(int(r[0]), r[1], r[2]) for r in msg["rows"]]
+            self.tour = msg.get("tour", self.tour)
         elif t == "lobby_return":
             self.phase = "lobby"
             self.to_lobby = True
@@ -247,9 +255,10 @@ class Session:
         self.events.append((pid, ev))
 
     def _begin(self):
-        self.phase = self.settings["mode"]
+        self.phase = "race" if self.settings["mode"] == "tournament" else self.settings["mode"]
         self.finish = {}
         self.results = None
+        self._counted_results = False
         self._first_finish = None
         self.started = dict(self.settings)
         self.remote.clear()
@@ -264,7 +273,11 @@ class Session:
                 rows.append((pid, None, dist))
         rows.sort(key=lambda r: (r[1] is None, r[1] if r[1] is not None else -r[2]))
         self.results = rows
-        self.net.broadcast({"t": "results", "rows": rows})
+        if self.tour:
+            for place, (pid, t, _) in enumerate(rows):
+                gain = POINTS[place] if place < len(POINTS) else 0
+                self.tour["points"][str(pid)] = self.tour["points"].get(str(pid), 0) + gain
+        self.net.broadcast({"t": "results", "rows": rows, "tour": self.tour})
 
     # --------------------------------------------------------------- actions
     def pick(self, vehicle, driver):
@@ -282,9 +295,31 @@ class Session:
             self.net.broadcast(self._lobby_msg())
 
     def start(self):
-        if self.is_host:
-            self.net.broadcast({"t": "start", "settings": self.settings})
-            self._begin()
+        if not self.is_host:
+            return
+        if self.settings["mode"] == "tournament":
+            others = [st["key"] for st in STAGES if st["key"] != self.settings["stage"]]
+            random.shuffle(others)
+            self.tour = {"round": 1, "rounds": TOUR_ROUNDS, "points": {},
+                         "stages": [self.settings["stage"]] + others[:TOUR_ROUNDS - 1]}
+        else:
+            self.tour = None
+        self._send_start()
+
+    def next_round(self):
+        if self.is_host and self.tour and self.tour["round"] < self.tour["rounds"]:
+            self.tour["round"] += 1
+            self._send_start()
+
+    def _send_start(self):
+        run = dict(self.settings)
+        if self.tour:
+            run.update(stage=self.tour["stages"][self.tour["round"] - 1], mode="race", distance=TOUR_DISTANCE,
+                       tour=self.tour)
+        self.net.broadcast({"t": "start", "settings": run})
+        lobby, self.settings = self.settings, run
+        self._begin()
+        self.settings = lobby
 
     def back_to_lobby(self):
         if self.is_host:

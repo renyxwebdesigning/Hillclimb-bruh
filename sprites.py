@@ -246,6 +246,27 @@ def fuel_can(ppm):
     return supersample(w, h, draw)
 
 
+def trophy(px):
+    """Golden secret-trophy cup."""
+    def draw(surf, k):
+        W, H = surf.get_size()
+        gold, dark, hi = (255, 200, 40), (190, 130, 10), (255, 244, 170)
+        pygame.draw.polygon(surf, dark, [(W * 0.18, H * 0.08), (W * 0.82, H * 0.08), (W * 0.7, H * 0.5), (W * 0.3, H * 0.5)])
+        pygame.draw.polygon(surf, gold, [(W * 0.22, H * 0.1), (W * 0.78, H * 0.1), (W * 0.67, H * 0.47), (W * 0.33, H * 0.47)])
+        for sx in (-1, 1):
+            pygame.draw.arc(surf, dark, (W * (0.5 + sx * 0.3) - W * 0.16, H * 0.12, W * 0.32, H * 0.3),
+                            1.2 if sx > 0 else -1.6, 4.6 if sx > 0 else 1.6, max(1, int(W * 0.06)))
+        pygame.draw.rect(surf, dark, (W * 0.44, H * 0.48, W * 0.12, H * 0.22))
+        pygame.draw.rect(surf, gold, (W * 0.28, H * 0.7, W * 0.44, H * 0.12), border_radius=int(W * 0.03))
+        pygame.draw.rect(surf, dark, (W * 0.22, H * 0.82, W * 0.56, H * 0.12), border_radius=int(W * 0.03))
+        pygame.draw.line(surf, hi, (W * 0.32, H * 0.16), (W * 0.4, H * 0.4), max(1, int(W * 0.05)))
+        star = [(W * 0.5 + W * 0.12 * (1 if i % 2 == 0 else 0.45) * __import__("math").cos(-1.5708 + i * 0.6283),
+                 H * 0.27 + W * 0.12 * (1 if i % 2 == 0 else 0.45) * __import__("math").sin(-1.5708 + i * 0.6283))
+                for i in range(10)]
+        pygame.draw.polygon(surf, (255, 255, 255), star)
+    return supersample(px, px, draw)
+
+
 def pebble(px_radius, color, hi):
     d = px_radius * 2 + 2
 

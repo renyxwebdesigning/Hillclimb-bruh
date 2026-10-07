@@ -15,6 +15,7 @@ import numpy as np
 import pygame
 
 import music
+from config import WEB
 from drivers import DRIVERS
 
 SR = 44100
@@ -29,6 +30,9 @@ PROFILES = {
     "monster": dict(idle=17, top=94, tilt=1.2, sub=0.8, f1=(120, 80, 2.4), f2=(380, 200, 1.1), noise=0.3, gain=0.62),
     "supercar": dict(idle=34, top=275, tilt=0.85, sub=0.2, f1=(420, 250, 1.6), f2=(1500, 600, 1.0), noise=0.18, gain=0.46),
     "rocket": dict(rocket=True, gain=0.36),
+    "tank": dict(idle=12, top=58, tilt=1.35, sub=0.7, f1=(90, 60, 2.6), f2=(300, 160, 1.2), noise=0.45, gain=0.66),
+    "police": dict(idle=20, top=118, tilt=1.1, sub=0.75, f1=(150, 90, 2.2), f2=(450, 220, 1.0), noise=0.26, gain=0.58),
+    "hover": dict(electric=True, gain=0.4),
 }
 
 
@@ -100,6 +104,8 @@ class EngineSynth:
         load0, self.load = self.load, self.load + (load - self.load) * 0.5
         if p.get("rocket"):
             return self._rocket(n, load0, self.load)
+        if p.get("electric"):
+            return self._electric(n, rpm, load0, self.load)
         f_target = p["idle"] + (p["top"] - p["idle"]) * max(0.0, min(1.0, rpm)) ** 1.1
         f = np.linspace(self.f, f_target, n, endpoint=False)
         self.f = f_target
@@ -134,6 +140,18 @@ class EngineSynth:
         level = np.linspace(0.55 + 0.45 * load0, 0.55 + 0.45 * self.load, n)
         y = (wave + rough) * am * level * p["gain"]
         return np.tanh(y * 1.6) / np.tanh(1.6)
+
+    def _electric(self, n, rpm, l0, l1):
+        """A rising electric whine with a soft hover hum."""
+        f_target = 180 + 900 * max(0.0, min(1.0, rpm))
+        f = np.linspace(self.f, f_target, n, endpoint=False)
+        self.f = f_target
+        ph = self.phase + np.cumsum(2 * np.pi * f / SR)
+        self.phase = float(ph[-1] % (2 * np.pi * 64))
+        hum_ph = ph * 0.11
+        level = np.linspace(0.35 + 0.65 * l0, 0.35 + 0.65 * l1, n)
+        y = (np.sin(ph) * 0.35 + np.sin(2 * ph) * 0.12 + np.sin(hum_ph) * 0.5) * level * self.p["gain"]
+        return np.tanh(y * 1.5) / np.tanh(1.5)
 
     def _rocket(self, n, l0, l1):
         noise = self.rng.uniform(-1, 1, n)
@@ -213,14 +231,44 @@ def _restart():
     return y * 0.7
 
 
+def _loud(snd, drive):
+    """Normalise and gently saturate a sound so it is loud and punchy."""
+    try:
+        a = pygame.sndarray.array(snd).astype(np.float64) / 32768
+    except (pygame.error, ValueError):
+        return snd
+    a /= np.abs(a).max() + 1e-9
+    a = np.tanh(a * drive) / np.tanh(drive)
+    return pygame.sndarray.make_sound(np.ascontiguousarray((a * 32000).astype(np.int16)))
+
+
+def _crash():
+    """Thump, metal crunch and a little glass."""
+    n = int(SR * 0.9)
+    t = np.arange(n) / SR
+    rng = np.random.default_rng(12)
+    thump = np.sin(2 * np.pi * (55 + 40 * np.exp(-t * 20)) * t) * np.exp(-t * 7) * 1.0
+    crunch = _noise(0.9, 5, 6, 13)[:n] * 0.8
+    metal = sum(np.sin(2 * np.pi * f * t) * np.exp(-t * d) for f, d in ((420, 6), (911, 8), (1583, 10), (2390, 12))) * 0.22
+    glass = np.zeros(n)
+    for _ in range(14):
+        i = int(rng.uniform(0.02, 0.5) * SR)
+        f = rng.uniform(3000, 6500)
+        m = min(n - i, int(SR * 0.08))
+        tt = np.arange(m) / SR
+        glass[i:i + m] += np.sin(2 * np.pi * f * tt) * np.exp(-tt * 60) * 0.25
+    return thump + crunch + metal + glass
+
+
 class Voices:
     """Driver swear lines, spoken by espeak and cached as WAV files."""
 
     def __init__(self):
         self.dir = music.CACHE / "voice"
         self.sounds = {}
-        self.espeak = shutil.which("espeak-ng") or shutil.which("espeak")
-        threading.Thread(target=self._build, daemon=True).start()
+        self.espeak = None if WEB else (shutil.which("espeak-ng") or shutil.which("espeak"))
+        if self.espeak:
+            threading.Thread(target=self._build, daemon=True).start()
 
     def _path(self, key, i):
         return self.dir / f"{key}_{i}_v1.wav"
@@ -255,8 +303,7 @@ class Voices:
                 path = self._path(key, i)
             if path.exists():
                 try:
-                    snd = self.sounds[(key, i)] = pygame.mixer.Sound(str(path))
-                    snd.set_volume(1.0)
+                    snd = self.sounds[(key, i)] = _loud(pygame.mixer.Sound(str(path)), 3.0)
                 except pygame.error:
                     snd = None
         return d["lines"][i], snd, i
@@ -268,6 +315,8 @@ class Audio:
         self.enabled = True
         self.music_on = True
         self.track = None
+        self.vol = {"master": 1.0, "music": 0.8, "sfx": 1.0, "voice": 1.0}
+        self._duck_until = 0.0
         self.synth = None
         try:
             if not pygame.mixer.get_init():
@@ -285,15 +334,16 @@ class Audio:
             "coin": _to_sound(self._arpeggio([1568, 2093], 0.045), 0.3),
             "fuel": _to_sound(self._sweep(320, 900, 0.32), 0.5),
             "bonus": _to_sound(self._arpeggio([784, 988, 1175, 1568], 0.07), 0.4),
-            "crash": _to_sound(_mix(_noise(0.6, 6, 14, 1) * 0.9, _tone(70, 0.5, 7) * 0.8), 0.7),
+            "crash": _to_sound(_crash() / 1.6, 0.9),
             "land": _to_sound(_mix(_noise(0.18, 22, 30, 2) * 0.8, _tone(90, 0.15, 25)), 0.5),
             "click": _to_sound(_tone(1200, 0.035, 80, "tri"), 0.35),
             "buy": _to_sound(self._arpeggio([1046, 1568], 0.06), 0.45),
             "deny": _to_sound(_tone(150, 0.22, 10, "square"), 0.3),
             "beep": _to_sound(_tone(880, 0.12, 18, "square"), 0.18),
             "boost_on": _to_sound(_mix(_noise(0.35, 7, 3, 4) * 0.7, self._sweep(120, 420, 0.3) * 0.5), 0.45),
-            "horn_puppy": _to_sound(_puppy_horn(), 0.7),
-            "horn_ship": _to_sound(_ship_horn(), 0.8),
+            "horn_puppy": _to_sound(np.tanh(_puppy_horn() * 2.2) / np.tanh(2.2), 1.0),
+            "horn_ship": _to_sound(np.tanh(_ship_horn() * 2.0) / np.tanh(2.0), 1.0),
+            "horn_siren": _to_sound(self._siren(), 0.95),
             "seize": _to_sound(_seize(), 0.75),
             "wrench": _to_sound(_wrench(), 0.55),
             "restart": _to_sound(_restart(), 0.6),
@@ -304,11 +354,60 @@ class Audio:
         self.voices = Voices()
         self.boost_loop = _to_sound(self._whoosh(), 0.5)
         self.tracks = {}
-        for name in ("menu", "drive"):
+        try:
+            self.tracks["menu"] = pygame.mixer.Sound(str(music.load("menu")))
+        except (pygame.error, OSError):
+            pass
+        if WEB:
+            self._load_tracks()
+        else:
+            threading.Thread(target=self._load_tracks, daemon=True).start()
+
+    def _load_tracks(self):
+        for name in music.TRACKS:
+            if name in self.tracks:
+                continue
             try:
                 self.tracks[name] = pygame.mixer.Sound(str(music.load(name)))
             except (pygame.error, OSError):
-                pass
+                continue
+            if self.track == name:                 # it was asked for before it was ready
+                self.track = None
+                self._want = name
+
+    @staticmethod
+    def _siren():
+        """Police siren: a few wailing cycles."""
+        dur = 1.6
+        n = int(SR * dur)
+        t = np.arange(n) / SR
+        f = 750 + 350 * np.sin(2 * np.pi * 1.25 * t - np.pi / 2)
+        ph = 2 * np.pi * np.cumsum(f) / SR
+        x = np.sin(ph) + 0.4 * np.sin(2 * ph) + 0.2 * np.sign(np.sin(ph))
+        return x * np.minimum(1, t / 0.05) * np.clip((dur - t) / 0.1, 0, 1) * 0.5
+
+    def set_volumes(self, vol):
+        self.vol.update(vol)
+        self._apply_music_volume()
+
+    def _apply_music_volume(self):
+        if not self.ok:
+            return
+        base = 0.55 if self.track == "menu" else 0.5
+        duck = 0.3 if pygame.time.get_ticks() / 1000 < self._duck_until else 1.0
+        self.music_ch.set_volume(base * self.vol["music"] * self.vol["master"] * duck)
+
+    def tick(self):
+        """Once per frame: start a track that finished loading, restore ducked music."""
+        want = getattr(self, "_want", None)
+        if want and want in self.tracks:
+            self._want = None
+            self.music(want)
+        if self.ok and self._duck_until:
+            self._apply_music_volume()
+            if pygame.time.get_ticks() / 1000 > self._duck_until:
+                self._duck_until = 0.0
+                self._apply_music_volume()
 
     @staticmethod
     def _sweep(f0, f1, dur):
@@ -341,6 +440,7 @@ class Audio:
 
     # ------------------------------------------------------------- effects
     def play(self, name, volume=1.0):
+        volume *= self.vol["sfx"] * self.vol["master"]
         if self.ok and self.enabled and volume > 0.02:
             ch = self.fx[name].play()
             if ch:
@@ -353,10 +453,13 @@ class Audio:
             i = random.randrange(len(d["lines"])) if index is None else index % len(d["lines"])
             return d["lines"][i], i
         text, snd, i = self.voices.say(driver_key, index)
+        volume *= self.vol["voice"] * self.vol["master"]
         if snd is not None and self.enabled and volume > 0.02:
             ch = snd.play()
             if ch:
                 ch.set_volume(min(1.0, volume))
+                self._duck_until = pygame.time.get_ticks() / 1000 + snd.get_length()
+                self._apply_music_volume()
         return text, i
 
     def boost(self, on):
@@ -366,6 +469,7 @@ class Audio:
         if on and not busy and self.enabled:
             self.play("boost_on")
             self.boost_ch.play(self.boost_loop, loops=-1, fade_ms=80)
+            self.boost_ch.set_volume(self.vol["sfx"] * self.vol["master"])
         elif not on and busy:
             self.boost_ch.fadeout(160)
 
@@ -389,7 +493,7 @@ class Audio:
 
     def _feed(self, rpm, load, on=True):
         ch = self.engine_ch
-        ch.set_volume(0.9 if self.enabled and on else 0.0)
+        ch.set_volume(0.9 * self.vol["sfx"] * self.vol["master"] if self.enabled and on else 0.0)
         if not ch.get_busy():
             snd = _to_sound(self.synth.render(rpm, load))
             self._recent.append(snd)
@@ -405,9 +509,12 @@ class Audio:
             return
         self.track = name
         self.music_ch.fadeout(400)
-        if name and self.music_on and name in self.tracks:
-            self.music_ch.play(self.tracks[name], loops=-1, fade_ms=900)
-            self.music_ch.set_volume(0.42 if name == "drive" else 0.5)
+        if name and self.music_on:
+            if name in self.tracks:
+                self.music_ch.play(self.tracks[name], loops=-1, fade_ms=900)
+                self._apply_music_volume()
+            else:
+                self._want, self.track = name, None
 
     def set_music(self, on):
         self.music_on = on

@@ -202,6 +202,8 @@ class Relay:
         self.name = name
         self.presence = {}          # number -> {"name", "on", "host"}
         self.hosting = False
+        self.leaderboard = {}       # stage -> number -> {"name", "best", "vehicle"}
+        self.bests = {}             # our own records, re-published whenever we connect
         self.invites = []           # incoming invites
         self.rooms = {}             # host number -> callback list (room topic handlers)
         self._room_handlers = []
@@ -220,6 +222,21 @@ class Relay:
     def _announce(self):
         msg = {"name": self.name, "on": 1, "host": int(self.hosting)}
         self.mqtt.publish(self._p(self.number), json.dumps(msg).encode(), retain=True)
+        for stage, (best, vehicle) in list(self.bests.items()):
+            self._publish_best(stage, best, vehicle)
+
+    def _publish_best(self, stage, best, vehicle):
+        msg = {"name": self.name, "best": int(best), "vehicle": vehicle}
+        self.mqtt.publish(f"{PREFIX}/lb/{stage}/{self.number}", json.dumps(msg).encode(), retain=True)
+
+    def post_best(self, stage, best, vehicle):
+        """Put a record on the world leaderboard (kept by the broker as a retained message)."""
+        self.bests[stage] = (best, vehicle)
+        if self.online:
+            self._publish_best(stage, best, vehicle)
+
+    def watch_leaderboard(self):
+        self.mqtt.subscribe(f"{PREFIX}/lb/+/+")
 
     def set_hosting(self, hosting):
         self.hosting = hosting
@@ -254,6 +271,10 @@ class Relay:
                 continue
             if topic.startswith(f"{PREFIX}/p/"):
                 self.presence[topic.rsplit("/", 1)[1]] = msg
+            elif topic.startswith(f"{PREFIX}/lb/"):
+                parts = topic.split("/")
+                if len(parts) >= 2 and isinstance(msg.get("best"), int) and 0 < msg["best"] < 30000:
+                    self.leaderboard.setdefault(parts[-2], {})[parts[-1]] = msg
             elif topic == f"{PREFIX}/i/{self.number}":
                 if msg.get("t") == "invite" and str(msg.get("from", "")).isdigit():
                     self.invites.append(msg)
@@ -266,6 +287,20 @@ class Relay:
         self.mqtt.publish(self._p(self.number), json.dumps({"name": self.name, "on": 0}).encode(), retain=True)
         time.sleep(0.05)
         self.mqtt.close()
+
+
+class OfflineRelay:
+    """Stand-in used in the browser version, where online play isn't possible."""
+
+    online = False
+    hosting = False
+
+    def __init__(self, number, name):
+        self.number, self.name = str(number), name
+        self.presence, self.invites, self.leaderboard, self.bests = {}, [], {}, {}
+
+    def __getattr__(self, name):          # set_name, watch, invite, post_best, update, close, ...
+        return lambda *a, **k: None
 
 
 class RoomHost:

@@ -16,6 +16,9 @@ from physics import rest_wheel_offsets
 from terrain import RES, START
 
 
+QUALITY = "high"     # "low" skips pebbles and roadside props
+
+
 def _hash(ix, iy, k=0):
     n = (ix * 374761393 + iy * 668265263 + k * 2246822519) & 0xFFFFFFFF
     n = ((n ^ (n >> 13)) * 1274126177) & 0xFFFFFFFF
@@ -119,7 +122,43 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
         img, pos = flame
         surf.blit(img, img.get_rect(center=pos))
 
-    if rig == "bike":
+    if rig == "tank":
+        (c0, c1), r = centres, spec["wheels"][0][2]
+        R = (r + 0.08) * k
+        dx, dy = c1[0] - c0[0], c1[1] - c0[1]
+        L = math.hypot(dx, dy) or 1
+        nx, ny = -dy / L, dx / L
+        belt = [(c0[0] + nx * R, c0[1] + ny * R), (c1[0] + nx * R, c1[1] + ny * R),
+                (c1[0] - nx * R, c1[1] - ny * R), (c0[0] - nx * R, c0[1] - ny * R)]
+        for c in (c0, c1):
+            pygame.draw.circle(surf, (34, 34, 32), c, R)
+        pygame.draw.polygon(surf, (34, 34, 32), belt)
+        spacing = 0.26 * k
+        phase = (-wheels[0][3] * r * k) % spacing
+        for sgn in (-1, 1):
+            ox, oy = nx * R * sgn, ny * R * sgn
+            d = phase if sgn < 0 else spacing - phase
+            while d < L:
+                f = d / L
+                px, py = c0[0] + dx * f + ox, c0[1] + dy * f + oy
+                pygame.draw.circle(surf, (70, 70, 66), (px, py), 0.06 * k)
+                d += spacing
+        for f in (0.25, 0.5, 0.75):
+            px, py = c0[0] + dx * f, c0[1] + dy * f
+            pygame.draw.circle(surf, (78, 82, 72), (px, py), r * 0.62 * k)
+            pygame.draw.circle(surf, (52, 56, 48), (px, py), r * 0.22 * k)
+        draw_wheels()
+    elif rig == "hover":
+        t = pygame.time.get_ticks() / 1000
+        for i, c in enumerate(centres):
+            pulse = 0.8 + 0.2 * math.sin(t * 18 + i)
+            for j, (col, size) in enumerate((((60, 200, 255), 0.5), ((150, 240, 255), 0.32), ((240, 255, 255), 0.16))):
+                rr = pygame.Rect(0, 0, size * k * 1.4 * pulse, size * k * 0.5 * pulse)
+                rr.center = (c[0], c[1] - 0.2 * k)
+                glow = pygame.Surface(rr.size, pygame.SRCALPHA)
+                pygame.draw.ellipse(glow, (*col, 120 + j * 50), glow.get_rect())
+                surf.blit(glow, rr)
+    elif rig == "bike":
         draw_wheels()
         pivot = P(*spec["pivot"])
         pygame.draw.line(surf, (54, 56, 62), pivot, centres[0], max(2, int(0.11 * k)))
@@ -164,12 +203,28 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
     else:
         surf.blit(body, body.get_rect(center=body_pos))
         surf.blit(head, head.get_rect(center=head_pos))
-    if rig != "bike":
+    if rig not in ("bike", "tank", "hover"):
         draw_wheels()
+    if spec.get("lightbar"):
+        t = pygame.time.get_ticks() / 1000
+        for i, (lx, ly) in enumerate(spec["lightbar"]):
+            on = (int(t * 7) + i) % 2 == 0
+            col = (255, 40, 40) if i % 2 == 0 else (40, 110, 255)
+            p = P(lx, ly)
+            pygame.draw.circle(surf, col if on else gfx.shade(col, 0.4), p, 0.11 * k)
+            if on:
+                glow = sprites.soft_puff(max(2, int(0.5 * k)), col)
+                surf.blit(glow, glow.get_rect(center=p))
 
 
 class Backdrop:
     """Sky gradient plus parallax silhouettes and weather for one stage."""
+
+    SUNS = {"clouds": ((255, 252, 230), 0.84, 0.16, 40), "sun": ((255, 248, 222), 0.76, 0.3, 54),
+            "snow": ((255, 255, 250), 0.18, 0.14, 34), "city": ((255, 246, 220), 0.8, 0.2, 38),
+            "jungle": ((255, 250, 220), 0.78, 0.14, 36), "mars": ((255, 240, 220), 0.7, 0.22, 20)}
+    SHAPES = {"clouds": 0, "sun": 1, "snow": 2, "space": 3, "city": 4, "volcano": 5, "jungle": 0, "mars": 1}
+    WEATHER = {"snow": "snow", "jungle": "rain", "volcano": "embers", "mars": "dust"}
 
     def __init__(self, stage):
         self.stage = stage
@@ -184,25 +239,32 @@ class Backdrop:
                 r = rnd.choice((1, 1, 1, 1.5, 2)) * gfx.U
                 pygame.draw.circle(sky, (b, b, min(255, b + 20)), (x, y), r)
             self._earth(sky, W * 0.8, H * 0.18, gfx.s(46))
+        elif decor == "volcano":
+            glow = sprites.soft_puff(gfx.s(420), (255, 120, 40))
+            sky.blit(glow, glow.get_rect(center=(W * 0.62, H * 0.62)))
         else:
-            sun = {"clouds": ((255, 252, 230), 0.84, 0.16, 40), "sun": ((255, 248, 222), 0.76, 0.3, 54),
-                   "snow": ((255, 255, 250), 0.18, 0.14, 34)}[decor]
+            sun = self.SUNS[decor]
             glow = sprites.soft_puff(gfx.s(sun[3] * 3.4), sun[0])
             sky.blit(glow, glow.get_rect(center=(W * sun[1], H * sun[2])))
             pygame.draw.circle(sky, sun[0], (W * sun[1], H * sun[2]), gfx.s(sun[3]))
+            if decor == "mars":                       # Phobos and Deimos
+                for x, y, r in ((0.22, 0.14, 9), (0.34, 0.24, 5)):
+                    pygame.draw.circle(sky, (210, 180, 160), (W * x, H * y), gfx.s(r))
+                    pygame.draw.circle(sky, (180, 150, 130), (W * x + gfx.s(r * 0.3), H * y + gfx.s(r * 0.2)), gfx.s(r * 0.35))
         self.sky = sky
         self.night = lighting.night_sky(stage, W, H) if stage.get("cycle") else None
         self.sunset = lighting.sunset_sky(W, H) if stage.get("cycle") else None
         self.clouds = []
-        if decor in ("clouds", "snow", "sun"):
-            tint = (255, 255, 255) if decor != "sun" else (255, 246, 230)
-            n = 6
+        tint = {"sun": (255, 246, 230), "volcano": (74, 56, 56), "mars": (236, 196, 170)}.get(decor, (255, 255, 255))
+        if decor not in ("space",):
+            n = 6 if decor != "mars" else 3
             for i in range(n):
                 w = gfx.s(rnd.uniform(170, 290))
                 self.clouds.append(((i + rnd.uniform(0.1, 0.6)) / n, rnd.uniform(0.06, 0.34),
                                     sprites.cloud(w, w * 0.42, tint), rnd.uniform(0.04, 0.09)))
-        self.flakes = [[rnd.uniform(0, W), rnd.uniform(0, H), rnd.uniform(0.6, 1.4)] for _ in range(160)] \
-            if decor == "snow" else []
+        self.weather = self.WEATHER.get(decor)
+        count = {"snow": 160, "rain": 220, "embers": 90, "dust": 120}.get(self.weather, 0)
+        self.flakes = [[rnd.uniform(0, W), rnd.uniform(0, H), rnd.uniform(0.6, 1.4)] for _ in range(count)]
 
     @staticmethod
     def _earth(surf, x, y, r):
@@ -245,18 +307,93 @@ class Backdrop:
         if night > 0:
             far = gfx.mix(far, (24, 30, 60), night * 0.55)
             near = gfx.mix(near, (18, 24, 50), night * 0.55)
-        shape = {"clouds": 0, "sun": 1, "snow": 2, "space": 3}[st["decor"]]
-        self._ridge(surf, cam, far, 0.05, 0.58, gfx.s(80), shape, 0.0, None)
-        trees = {"clouds": "round", "snow": "pine"}.get(st["decor"])
-        self._ridge(surf, cam, near, 0.13, 0.7, gfx.s(55), shape, 2.0, trees)
-        if self.flakes:
-            for f in self.flakes:
-                f[1] += (40 + 50 * f[2]) * gfx.U * dt
-                f[0] -= 18 * f[2] * gfx.U * dt
-                if f[1] > H:
-                    f[1] -= H + 10
-                sx = (f[0] - cam.x * cam.ppm * 0.3 * f[2]) % W
-                pygame.draw.circle(surf, (255, 255, 255), (sx, f[1]), 1.6 * f[2] * gfx.U)
+        shape = self.SHAPES[st["decor"]]
+        if shape == 4:
+            self._skyline(surf, cam, far, 0.05, 0.62, 1.0, night, 3)
+            self._skyline(surf, cam, near, 0.12, 0.74, 0.75, night, 9)
+        elif shape == 5:
+            self._volcanoes(surf, cam, far, near)
+        else:
+            self._ridge(surf, cam, far, 0.05, 0.58, gfx.s(80), shape, 0.0, None)
+            trees = {"clouds": "round", "snow": "pine", "jungle": "jungle"}.get(st["decor"])
+            self._ridge(surf, cam, near, 0.13, 0.7, gfx.s(55), shape, 2.0, trees)
+        self._weather(surf, cam, dt)
+
+    def _weather(self, surf, cam, dt):
+        if not self.flakes:
+            return
+        W, H, U = gfx.W, gfx.H, gfx.U
+        kind = self.weather
+        for f in self.flakes:
+            if kind == "snow":
+                f[1] += (40 + 50 * f[2]) * U * dt
+                f[0] -= 18 * f[2] * U * dt
+            elif kind == "rain":
+                f[1] += (700 + 300 * f[2]) * U * dt
+                f[0] -= 120 * U * dt
+            elif kind == "embers":
+                f[1] -= (30 + 40 * f[2]) * U * dt
+                f[0] += math.sin(f[1] * 0.02 + f[2] * 9) * 20 * U * dt
+            else:
+                f[0] -= (260 + 200 * f[2]) * U * dt
+                f[1] += 15 * U * dt
+            if f[1] > H:
+                f[1] -= H + 10
+            if f[1] < -10:
+                f[1] += H + 10
+            sx = (f[0] - cam.x * cam.ppm * 0.3 * f[2]) % W
+            if kind == "snow":
+                pygame.draw.circle(surf, (255, 255, 255), (sx, f[1]), 1.6 * f[2] * U)
+            elif kind == "rain":
+                pygame.draw.line(surf, (200, 220, 240), (sx, f[1]), (sx - 4 * U, f[1] + 16 * U * f[2]), max(1, int(U)))
+            elif kind == "embers":
+                pygame.draw.circle(surf, (255, 150 + int(60 * f[2]) % 100, 40), (sx, f[1]), 1.5 * f[2] * U)
+            else:
+                pygame.draw.line(surf, (236, 176, 130), (sx, f[1]), (sx + 22 * U * f[2], f[1]), max(1, int(U)))
+
+    @staticmethod
+    def _skyline(surf, cam, color, par, base_frac, scale, night, seed):
+        W, H = gfx.W, gfx.H
+        phase = cam.x * cam.ppm * par
+        base = H * base_frac + cam.y * cam.ppm * par * 0.6
+        bw = gfx.s(70 * scale)
+        first = int((phase - bw) // bw)
+        win = gfx.mix((255, 220, 120), color, 0.0)
+        for i in range(first, first + int(W / bw) + 3):
+            hgt = gfx.s((80 + 220 * _hash(i, seed)) * scale)
+            w = bw * (0.7 + 0.28 * _hash(i, seed + 1))
+            x = i * bw - phase
+            r = pygame.Rect(x, base - hgt, w, H - base + hgt)
+            pygame.draw.rect(surf, color, r)
+            if _hash(i, seed + 2) > 0.6:
+                pygame.draw.rect(surf, color, (x + w * 0.4, base - hgt - gfx.s(26 * scale), gfx.s(4), gfx.s(26 * scale)))
+            if night > 0.2:
+                for wy in range(int(r.y + gfx.s(10)), int(base), int(gfx.s(16 * scale)) or 1):
+                    for wx in range(int(x + gfx.s(6)), int(x + w - gfx.s(8)), int(gfx.s(14 * scale)) or 1):
+                        if _hash(wx // 7 + i * 31, wy // 7) < 0.4:
+                            pygame.draw.rect(surf, gfx.mix(color, win, night), (wx, wy, gfx.s(6 * scale), gfx.s(8 * scale)))
+
+    @staticmethod
+    def _volcanoes(surf, cam, far, near):
+        W, H = gfx.W, gfx.H
+        for color, par, base_frac, size, seed in ((far, 0.04, 0.62, 1.0, 3), (near, 0.1, 0.74, 0.7, 8)):
+            phase = cam.x * cam.ppm * par
+            gap = gfx.s(520 * size)
+            first = int((phase - gap) // gap)
+            base = H * base_frac + cam.y * cam.ppm * par * 0.6
+            for i in range(first, first + int(W / gap) + 3):
+                cx = i * gap - phase + _hash(i, seed) * gap * 0.4
+                hgt = gfx.s((170 + 120 * _hash(i, seed + 1)) * size)
+                half = hgt * 1.5
+                top = base - hgt
+                pygame.draw.polygon(surf, color, [(cx - half, base + 2), (cx - hgt * 0.18, top), (cx + hgt * 0.18, top),
+                                                  (cx + half, base + 2)])
+                pygame.draw.ellipse(surf, (255, 140, 40), (cx - hgt * 0.16, top - gfx.s(5), hgt * 0.32, gfx.s(12)))
+                for k in (-1, 1):
+                    pygame.draw.polygon(surf, (230, 90, 30), [(cx + k * hgt * 0.06, top + 2), (cx + k * hgt * 0.13, top + 2),
+                                                             (cx + k * hgt * 0.24, top + hgt * 0.32),
+                                                             (cx + k * hgt * 0.2, top + hgt * 0.34)])
+            pygame.draw.rect(surf, color, (0, base, W, H - base))
 
     @staticmethod
     def _ridge(surf, cam, color, par, base_frac, amp, shape, seed, trees):
@@ -278,15 +415,15 @@ class Backdrop:
         pts += [(W + step, H), (-step, H)]
         if trees:
             col = gfx.shade(color, 0.86)
-            gap = gfx.s(26)
+            gap = gfx.s(14 if trees == "jungle" else 26)
             first = int((phase - gfx.s(60)) // gap)
             for i in range(first, first + int(W / gap) + 6):
-                if _hash(i, 7) < 0.45:
+                if trees != "jungle" and _hash(i, 7) < 0.45:
                     continue
                 sx = i * gap - phase + _hash(i, 8) * gap * 0.6
                 y = ridge_y(sx)
-                size = gfx.s(10 + 12 * _hash(i, 9))
-                if trees == "round":
+                size = gfx.s(10 + 12 * _hash(i, 9)) * (1.6 if trees == "jungle" else 1.0)
+                if trees in ("round", "jungle"):
                     pygame.draw.circle(surf, col, (sx, y - size * 0.6), size)
                     pygame.draw.rect(surf, col, (sx - size * 0.15, y - size * 0.4, size * 0.3, size))
                 else:
@@ -346,6 +483,26 @@ class WorldRenderer:
         for a, b in t.tunnels:
             if b > x0 - 2 and a < x1 + 2:
                 self._draw_tunnel(surf, cam, a, b, now)
+        for a, b, level in t.pits:
+            if b > x0 and a < x1:
+                self._draw_water(surf, cam, a - 0.3, b + 0.3, level, now)
+        if st["key"] == "city":
+            dash = max(2, int(gfx.s(3)))
+            for i in range(i0 - i0 % 12, i1 - 6, 12):
+                if t.feature_at(START + i * RES) == "bridge":
+                    continue
+                p0 = cam.to_screen(START + i * RES, t.v[i] - st["top_depth"] * 0.45)
+                p1 = cam.to_screen(START + (i + 6) * RES, t.v[i + 6] - st["top_depth"] * 0.45)
+                pygame.draw.line(surf, (236, 230, 200), p0, p1, dash)
+        elif st["key"] == "volcano":
+            for i in range(i0 - i0 % 9, i1 - 3, 9):
+                if _hash(i, 77) < 0.55:
+                    continue
+                x = START + i * RES
+                p0 = cam.to_screen(x, t.v[i] - 0.05)
+                p1 = cam.to_screen(x + 0.4, t.v[i] - 0.45)
+                p2 = cam.to_screen(x + 0.15, t.v[i] - 0.8)
+                pygame.draw.lines(surf, (255, 120, 30), False, [p0, p1, p2], max(1, int(gfx.s(2.5))))
 
     def _span_points(self, cam, a, b, arr, offset=0.0):
         i0, i1 = int((a - START) / RES), int((b - START) / RES)
@@ -370,8 +527,23 @@ class WorldRenderer:
             return
         layer = pygame.Surface((int(w), int(h)), pygame.SRCALPHA)
         local = [(x - x0, y - y0) for x, y in poly]
-        pygame.draw.polygon(layer, (*col, 215), local)
         a_, b_ = local[0], local[-1]
+        if self.stage.get("lava"):
+            pygame.draw.polygon(layer, (*col, 255), local)
+            deep = [(x, max(y, a_[1] + gfx.s(18))) for x, y in local]
+            pygame.draw.polygon(layer, (200, 50, 10, 255), deep)
+            pygame.draw.line(layer, (255, 230, 120, 255), a_, b_, max(3, int(gfx.s(5))))
+            for k in range(7):
+                fx = (k * 0.37 + now * 0.07) % 1
+                life = (now * 1.3 + k * 0.29) % 1
+                bx = a_[0] + (b_[0] - a_[0]) * fx
+                pygame.draw.circle(layer, (255, 210, 90, 255), (bx, a_[1] + gfx.s(4) - life * gfx.s(6)),
+                                   gfx.s(3 + 4 * (1 - life)), max(1, int(gfx.s(2))))
+            surf.blit(layer, (x0, y0))
+            for k in range(3):
+                self._lamps.append(((top_l[0] + (top_r[0] - top_l[0]) * (k + 0.5) / 3), top_l[1]))
+            return
+        pygame.draw.polygon(layer, (*col, 215), local)
         pygame.draw.line(layer, (*gfx.shade(col, 1.45), 255), a_, b_, max(2, int(gfx.s(3))))
         for k in range(6):
             fx = (k / 6 + now * 0.05) % 1
@@ -462,6 +634,8 @@ class WorldRenderer:
             pygame.draw.rect(surf, gfx.shade(stone, 1.1), key_r.inflate(-4, -4), border_radius=int(0.05 * ppm))
 
     def _draw_pebbles(self, surf, cam, x0, x1):
+        if QUALITY == "low":
+            return
         st, t = self.stage, self.terrain
         ppm = cam.ppm
         cw, ch = 1.3, 1.05
@@ -488,6 +662,8 @@ class WorldRenderer:
 
     # ---------------------------------------------------------------- props
     def draw_props(self, surf, cam):
+        if QUALITY == "low":
+            return
         x0, x1 = cam.view(3.5)
         t = self.terrain
         bucket = int(cam.ppm / 2) * 2
@@ -498,6 +674,10 @@ class WorldRenderer:
                                   lambda: self._prop_img(kind, variant, bucket * scale, flip))
             sx, sy = cam.to_screen(x, t.visual_height(x) - 0.06)
             surf.blit(img, img.get_rect(midbottom=(sx, sy)))
+            light = prop_art.LIGHTS.get(kind)
+            if light:
+                lx = -light[0] if flip else light[0]
+                self._lamps.append((sx + lx * cam.ppm * scale, sy - light[1] * cam.ppm * scale))
 
     @staticmethod
     def _prop_img(kind, variant, ppm, flip):
@@ -516,6 +696,15 @@ class WorldRenderer:
             img = self.art.cached(("coin", value, pr), lambda: sprites.coin(value, pr))
             sx, sy = cam.to_screen(x, y)
             surf.blit(img, (sx - img.get_width() / 2, sy - img.get_height() / 2))
+        for tx, ty, ti, taken in self.terrain.trophies:
+            if taken or not x0 - 1 < tx < x1 + 1:
+                continue
+            size = int(0.9 * cam.ppm)
+            img = self.art.cached(("trophy", size), lambda: sprites.trophy(size))
+            sx, sy = cam.to_screen(tx, ty + math.sin(now * 2.5 + ti) * 0.12)
+            glow = self.art.cached(("tglow", size), lambda: sprites.soft_puff(size, (255, 230, 120)))
+            surf.blit(glow, glow.get_rect(center=(sx, sy)))
+            surf.blit(img, img.get_rect(center=(sx, sy)))
         fuel = self.terrain.fuel
         for i in range(bisect.bisect_left(self.fuel_x, x0), bisect.bisect_right(self.fuel_x, x1)):
             x, y, taken = fuel[i]
@@ -605,7 +794,16 @@ class WorldRenderer:
         self.draw_pickups(surf, cam, now)
         particles.draw(surf, cam, back=True)
         for v in views:
-            self.draw_vehicle(surf, cam, v.car, v.wobble, now, v.driver)
+            if v.ghost:
+                if not hasattr(self, "_ghost_layer"):
+                    self._ghost_layer = pygame.Surface((gfx.W, gfx.H), pygame.SRCALPHA)
+                layer = self._ghost_layer
+                layer.fill((0, 0, 0, 0))
+                self.draw_vehicle(layer, cam, v.car, v.wobble, now, v.driver)
+                layer.set_alpha(110)
+                surf.blit(layer, (0, 0))
+            else:
+                self.draw_vehicle(surf, cam, v.car, v.wobble, now, v.driver)
         particles.draw(surf, cam, back=False)
         if darkness > 0.01:
             cones, glows, tails = [], [], []
@@ -743,6 +941,6 @@ class CarView:
     """Everything needed to draw one vehicle (the player's or another player's)."""
 
     def __init__(self, car, driver="default", wobble=(0.0, 0.0, 0.0), lights=False, label=None,
-                 color=(255, 255, 255), bubble=None):
+                 color=(255, 255, 255), bubble=None, ghost=False):
         self.car, self.driver, self.wobble, self.lights = car, driver, wobble, lights
-        self.label, self.color, self.bubble = label, color, bubble
+        self.label, self.color, self.bubble, self.ghost = label, color, bubble, ghost

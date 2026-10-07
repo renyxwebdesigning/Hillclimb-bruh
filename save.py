@@ -27,6 +27,15 @@ def default():
         "last_host": "",
         "player_id": "",
         "friends": {},
+        "volume": {"master": 1.0, "music": 0.8, "sfx": 1.0, "voice": 1.0},
+        "music_track": "auto",
+        "graphics": "high",
+        "fullscreen": False,
+        "stats": {},
+        "achievements": [],
+        "trophies": {},
+        "daily_done": "",
+        "ghosts": True,
     }
 
 
@@ -46,15 +55,24 @@ def load():
 
 
 def _load():
+    from config import WEB
     data = default()
     try:
-        stored = json.loads(PATH.read_text())
-    except (OSError, ValueError):
+        if WEB:
+            store = _web_storage()
+            raw = store.getItem("hill_rider_save") if store is not None else None
+            stored = json.loads(raw) if raw else {}
+            if not raw:
+                data["graphics"] = "low"
+        else:
+            stored = json.loads(PATH.read_text())
+    except (OSError, ValueError, TypeError):
         return data
     if not isinstance(stored, dict):
         return data
     for k in ("coins", "best", "stage", "vehicle", "sound", "music", "driver", "horn", "name", "last_host",
-              "player_id", "friends"):
+              "player_id", "friends", "volume", "music_track", "graphics", "fullscreen", "stats", "achievements",
+              "trophies", "daily_done", "ghosts"):
         if k in stored and type(stored[k]) is type(data[k]):
             data[k] = stored[k]
     levels = stored.get("levels", {})
@@ -78,7 +96,21 @@ def _load():
     return data
 
 
+def _web_storage():
+    try:
+        import platform as browser       # pygbag replaces `platform` with the browser bridge
+        return browser.window.localStorage
+    except (ImportError, AttributeError):
+        return None
+
+
 def save(data):
+    from config import WEB
+    if WEB:
+        store = _web_storage()
+        if store is not None:
+            store.setItem("hill_rider_save", json.dumps(data))
+        return
     try:
         PATH.parent.mkdir(parents=True, exist_ok=True)
         tmp = PATH.with_suffix(".tmp")

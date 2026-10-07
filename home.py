@@ -15,7 +15,8 @@ from render import CarView
 from ui import GOLD, INK, MUTED, WHITE, Button, toggles_hit
 
 ITEMS = [("PLAY", "stages"), ("PLAY ONLINE", "online"), ("VEHICLES", "vehicles"), ("DRIVERS", "drivers"),
-         ("GARAGE", "garage"), ("QUIT", "quit")]
+         ("GARAGE", "garage"), ("TROPHIES", "trophies"), ("LEADERBOARD", "leaderboard"), ("SETTINGS", "settings"),
+         ("QUIT", "quit")]
 
 
 class _Silent:
@@ -44,7 +45,7 @@ class HomeMenu:
     def __init__(self, app):
         self.app = app
         x = s(250)
-        self.buttons = [Button(label, (x, s(300) + i * s(66)), (330, 56), "green" if i == 0 else "gray", key=key)
+        self.buttons = [Button(label, (x, s(250) + i * s(51)), (330, 44), "green" if i == 0 else "gray", key=key)
                         for i, (label, key) in enumerate(ITEMS)]
         self.focus = 0
         self.panel = self._panel()
@@ -53,6 +54,7 @@ class HomeMenu:
         self.still_t = 0.0
         self.face_img = None
         self.face_key = None
+        self.daily_rect = None
 
     @staticmethod
     def _panel():
@@ -114,6 +116,9 @@ class HomeMenu:
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if toggles_hit(app, ev.pos):
                 return
+            if self.daily_rect and self.daily_rect.collidepoint(ev.pos) and not app.progress.daily_done():
+                app.start_daily()
+                return
             for b in self.buttons:
                 if b.hit(ev.pos):
                     self.activate(b.key)
@@ -153,9 +158,42 @@ class HomeMenu:
                                                  (b.rect.x - s(10), b.rect.centery),
                                                  (b.rect.x - s(26), b.rect.centery + s(10))])
         self._info_card(surf)
+        self._daily_card(surf, mouse)
         self._toggles(surf)
         gfx.blit_text(surf, "cond", 15, "Arrow keys + Enter, or click", (190, 194, 202),
                       (s(58), gfx.H - s(22)), "midleft", outline=INK, width=1)
+
+    def _daily_card(self, surf, mouse):
+        app = self.app
+        d = app.progress.daily()
+        done = app.progress.daily_done()
+        card = pygame.Rect(0, 0, s(360), s(150))
+        card.bottomright = (gfx.W - s(24), gfx.H - s(258))
+        box = pygame.Surface(card.size, pygame.SRCALPHA)
+        pygame.draw.rect(box, (14, 16, 22, 200), box.get_rect(), border_radius=si(16))
+        surf.blit(box, card)
+        pygame.draw.rect(surf, GOLD, card, si(2), border_radius=si(16))
+        gfx.blit_text(surf, "cond", 18, "DAILY CHALLENGE", GOLD, (card.x + s(16), card.y + s(12)))
+        gfx.blit_text(surf, "cond", 16, f"+{d['reward']:,} coins", WHITE, (card.right - s(16), card.y + s(13)), "topright")
+        words, lines, line = d["text"].split(), [], ""
+        for w in words:
+            test = (line + " " + w).strip()
+            if gfx.text("cond", 18, test, WHITE).get_width() > card.w - s(32):
+                lines.append(line)
+                line = w
+            else:
+                line = test
+        lines.append(line)
+        for i, ln in enumerate(lines[:2]):
+            gfx.blit_text(surf, "cond", 18, ln, WHITE, (card.x + s(16), card.y + s(40) + i * s(24)))
+        self.daily_rect = pygame.Rect(card.x + s(16), card.bottom - s(44), card.w - s(32), s(32))
+        if done:
+            pygame.draw.rect(surf, (60, 64, 70), self.daily_rect, border_radius=si(8))
+            gfx.blit_text(surf, "cond", 18, "DONE - COME BACK TOMORROW", (170, 230, 120), self.daily_rect.center, "center")
+        else:
+            hover = self.daily_rect.collidepoint(mouse)
+            pygame.draw.rect(surf, (100, 210, 70) if hover else (76, 170, 46), self.daily_rect, border_radius=si(8))
+            gfx.blit_text(surf, "cond", 18, "PLAY CHALLENGE", WHITE, self.daily_rect.center, "center")
 
     def _toggles(self, surf):
         app = self.app
@@ -179,7 +217,9 @@ class HomeMenu:
         relay = app.relay
         pygame.draw.circle(surf, (90, 220, 70) if relay.online else (230, 160, 40), (x + s(6), y + s(12)), s(6))
         r = gfx.blit_text(surf, "cond", 22, f"#{app.data['player_id']}", GOLD, (x + s(20), y + s(12)), "midleft")
-        gfx.blit_text(surf, "cond", 16, "online" if relay.online else "connecting...", MUTED,
+        from config import WEB
+        status = "browser version" if WEB else "online" if relay.online else "connecting..."
+        gfx.blit_text(surf, "cond", 16, status, MUTED,
                       (r.right + s(8), y + s(13)), "midleft")
         surf.blit(app.coin_icon, app.coin_icon.get_rect(midright=(card.right - s(70), y + s(12))))
         gfx.blit_text(surf, "cond", 22, gfx.fmt(app.data["coins"]), WHITE, (card.right - s(18), y + s(12)), "midright")
@@ -196,9 +236,13 @@ class HomeMenu:
         gfx.blit_text(surf, "cond", 20, VEHICLE_BY_KEY[app.data["vehicle"]]["name"].upper(), WHITE, (tx, y), "topleft")
         gfx.blit_text(surf, "cond", 16, f"driven by {name}", MUTED, (tx, y + s(24)), "topleft")
         y += s(62)
-        gfx.blit_text(surf, "cond", 15, "BEST DISTANCES", MUTED, (x, y), "topleft")
-        for i, st in enumerate(STAGES):
-            best = app.data["best"].get(st["key"], 0)
-            col, row = i % 2, i // 2
-            gfx.blit_text(surf, "cond", 17, f"{st['name']}: {best} m" if best else f"{st['name']}: -", WHITE,
-                          (x + col * s(170), y + s(22) + row * s(24)), "topleft")
+        from progress import ACHIEVEMENTS
+        bests = [(b, k) for k, b in app.data["best"].items() if b]
+        top = max(bests) if bests else None
+        st_name = next((st["name"] for st in STAGES if top and st["key"] == top[1]), "")
+        rows = [("Best run", f"{top[0]} m  ({st_name})" if top else "-"),
+                ("Achievements", f"{len(app.data.get('achievements', []))} / {len(ACHIEVEMENTS)}"),
+                ("Secret trophies", f"{sum(len(v) for v in app.data.get('trophies', {}).values())} / {5 * len(STAGES)}")]
+        for i, (label, value) in enumerate(rows):
+            gfx.blit_text(surf, "cond", 16, label, MUTED, (x, y + i * s(25)), "topleft")
+            gfx.blit_text(surf, "cond", 17, value, WHITE, (card.right - s(18), y + i * s(25)), "topright")
