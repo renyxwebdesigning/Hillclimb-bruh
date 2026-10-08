@@ -10,6 +10,7 @@ import gfx
 import lighting
 import props as prop_art
 import sprites
+import styling
 import vehicle_art
 from config import BASE_PPM, season_at, vehicle_stats
 from physics import rest_wheel_offsets
@@ -87,6 +88,20 @@ class VehicleArt:
             self.head = drivers.face(driver, r * ppm)
         self.wheels = [vehicle_art.wheel(style, w[2], ppm) for style, w in zip(spec["wheel_art"], spec["wheels"])]
         self.flames = [vehicle_art.flame(ppm, 1.1 if spec["thrust"][0] > 0 else 0.8, seed=i) for i in range(4)]
+        self._styled = {}
+
+    def styled(self, levels):
+        """The body with the paint and stickers (or, for the shark, the growth stage) its upgrades earned."""
+        key = self.spec["key"]
+        tier = (styling.shark_stage(levels),) if key == "shark" else styling.tiers(levels)[:2]
+        img = self._styled.get(tier)
+        if img is None:
+            if key == "shark":
+                img = vehicle_art.body("shark", self.ppm, tier[0])
+            else:
+                img = styling.styled_body(self.body, key, levels, self.ppm)
+            self._styled[tier] = img
+        return img
 
 
 class Art:
@@ -132,50 +147,14 @@ def compose_vehicle(art, spec, scale, levels=None, angle=0.0, driver="default"):
     return surf, (c, c)
 
 
-def _horse_legs(surf, P, k, spec, wheels, centres, still):
-    """Four galloping legs: hips on the body, hooves on the ground under the physics 'wheels'.
-    The gallop phase follows the distance run (the hidden wheels' spin)."""
-    o = P(0.0, 0.0)
-    fx, fy = P(1.0, 0.0)[0] - o[0], P(1.0, 0.0)[1] - o[1]          # body forward, in pixels per metre
-    ux, uy = P(0.0, 1.0)[0] - o[0], P(0.0, 1.0)[1] - o[1]          # body up
-    spin = -wheels[0][3]
-    r = spec["wheels"][0][2]
-    phase = spin * r / 2.4 * math.tau                              # one stride every 2.4 m
-    coat, coat_dk, hoof = (150, 96, 54), (104, 62, 32), (40, 30, 24)
-    # (hip, which hidden wheel, phase offset, near side?)  far legs first, so the near legs cover them
-    legs = (((-0.62, -0.05), 0, 0.0, False), ((0.7, -0.12), 1, 0.5, False),
-            ((-0.78, -0.05), 0, 0.12, True), ((0.82, -0.12), 1, 0.62, True))
-    for (hx, hy), wi, off, near in legs:
-        hip = P(hx, hy)
-        ground = (centres[wi][0] - ux * r, centres[wi][1] - uy * r)
-        ph = phase + off * math.tau
-        swing, lift = (0.0, 0.0) if still else (0.38 * math.sin(ph), 0.24 * max(0.0, math.cos(ph)))
-        foot = (ground[0] + fx * (swing + (hx - spec["wheels"][wi][0])) + ux * lift,
-                ground[1] + fy * (swing + (hx - spec["wheels"][wi][0])) + uy * lift)
-        # knee: halfway, pushed backwards for hind legs and forwards for front legs
-        bend = (-0.16 if wi == 0 else 0.12) * (1 + lift * 2)
-        knee = ((hip[0] + foot[0]) / 2 + fx * bend, (hip[1] + foot[1]) / 2 + fy * bend)
-        col = coat if near else coat_dk
-        # thick, tapering thigh; slim cannon bone; dark hoof
-        hx2, hy2 = knee[0] - hip[0], knee[1] - hip[1]
-        L = math.hypot(hx2, hy2) or 1
-        nx, ny = -hy2 / L, hx2 / L
-        w0, w1 = 0.2 * k, 0.1 * k
-        pygame.draw.polygon(surf, col, [(hip[0] + nx * w0, hip[1] + ny * w0), (knee[0] + nx * w1, knee[1] + ny * w1),
-                                        (knee[0] - nx * w1, knee[1] - ny * w1), (hip[0] - nx * w0, hip[1] - ny * w0)])
-        pygame.draw.circle(surf, col, hip, 0.17 * k)
-        pygame.draw.circle(surf, col, knee, 0.07 * k)
-        pygame.draw.line(surf, col, knee, foot, max(2, int(0.12 * k)))
-        pygame.draw.circle(surf, hoof, foot, 0.075 * k)
-
-
 # ------------------------------------------------------------ upgrade looks
 # Every upgrade shows on the vehicle as it levels up:
 #   boost       neon underglow (cyan, then magenta, then cycling rainbow)
 #   tires       gold rims, then spinning gold spokes, then a glowing rim ring
 #   engine      chrome tailpipes, a second pipe, then exhaust flames
 #   suspension  gold springs, then neon springs
-#   turbo       body sparkles, then a glowing aura (blue, purple, gold)
+#   turbo       body sparkles, then a glowing aura (blue, purple, electric cyan)
+#   all of them paint, stickers and spoilers by total level: see styling.py
 _PUFFS = {}
 
 
@@ -230,7 +209,7 @@ def _aura(surf, va, levels, scale, angle, pos, t):
     tu = _lv(levels, "turbo")
     if tu < 3:
         return
-    col = {3: (80, 180, 255), 4: (190, 90, 255)}.get(tu, (255, 200, 60))
+    col = {3: (80, 180, 255), 4: (190, 90, 255)}.get(tu, (120, 255, 255))
     cache = va.__dict__.setdefault("auras", {})
     sil = cache.get(col)
     if sil is None:
@@ -266,7 +245,7 @@ def _sparkles(surf, P, k, spec, levels, t):
 
 def _rims(surf, k, spec, levels, centres, wheels, t):
     tl = _lv(levels, "tires")
-    if tl < 4 or spec["rig"] in ("horse", "hover", "shark"):
+    if tl < 4 or spec["rig"] in ("hover", "shark"):
         return
     gold, gold_dk = (240, 186, 40), (170, 120, 20)
     for ctr, w, sw in zip(centres, wheels, spec["wheels"]):
@@ -328,7 +307,8 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
     """Shared by gameplay and menus. wheels: (lx, ly, radius, spin) in local or world coords via P."""
     rig = spec["rig"]
     now_t = pygame.time.get_ticks() / 1000
-    _underglow(surf, P, k, spec, levels, now_t, True)
+    looks = None if spec["key"] in styling.NO_STYLE else levels          # the shark grows instead of glowing
+    _underglow(surf, P, k, spec, looks, now_t, True)
     anchors = [(w[0], w[1]) for w in spec["wheels"]]
     wheel_imgs = [pygame.transform.rotozoom(img, math.degrees(w[3]), scale) for img, w in zip(va.wheels, wheels)]
     centres = [P(w[0], w[1]) for w in wheels] if still else [w[4] for w in wheels]
@@ -337,7 +317,7 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
         for img, ctr in zip(wheel_imgs, centres):
             surf.blit(img, img.get_rect(center=ctr))
         if rig in ("bike", "tank"):
-            _rims(surf, k, spec, levels, centres, wheels, now_t)
+            _rims(surf, k, spec, looks, centres, wheels, now_t)
 
     if flame is not None:
         img, pos = flame
@@ -369,15 +349,14 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
             pygame.draw.circle(surf, (78, 82, 72), (px, py), r * 0.62 * k)
             pygame.draw.circle(surf, (52, 56, 48), (px, py), r * 0.22 * k)
         draw_wheels()
-    elif rig == "horse":
-        _horse_legs(surf, P, k, spec, wheels, centres, still)
     elif rig == "shark":                                   # the tail fin beats faster the faster it swims
         t = pygame.time.get_ticks() / 1000
         a = 0.12 if still else math.sin(t * 7.0) * 0.35
-        root = (-1.7, 0.08)
+        size = styling.SHARK_SCALE[styling.shark_stage(levels)]
+        root = (-1.7 * size, 0.1 + (0.08 - 0.1) * size)
         fin = [(0.0, 0.0), (-0.75, 0.75), (-0.55, 0.08), (-0.75, -0.6)]
         ca, sa = math.cos(a), math.sin(a)
-        pts = [P(root[0] + x * ca - y * sa * 0.3, root[1] + y + x * sa * 0.6) for x, y in fin]
+        pts = [P(root[0] + (x * ca - y * sa * 0.3) * size, root[1] + (y + x * sa * 0.6) * size) for x, y in fin]
         pygame.draw.polygon(surf, (86, 106, 128), pts)
         pygame.draw.polygon(surf, (30, 40, 52), pts, max(1, int(0.02 * k)))
     elif rig == "hover":
@@ -421,28 +400,29 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
                 side = amp if i % 2 else -amp
                 pts.append((a[0] + dx * i / 14 + ux * side, a[1] + dy * i / 14 + uy * side))
             pts.append(ctr)
-            pygame.draw.lines(surf, _spring_color(levels, w[2] > 0.6), False, pts,
+            pygame.draw.lines(surf, _spring_color(looks, w[2] > 0.6), False, pts,
                               max(2, int((0.05 if w[2] > 0.6 else 0.035) * k)))
 
-    body = pygame.transform.rotozoom(va.body, math.degrees(angle), scale)
+    body = pygame.transform.rotozoom(va.styled(levels), math.degrees(angle), scale)
     hx, hy = spec["head"][0] + wobble[0], spec["head"][1] + wobble[1]
     head = pygame.transform.rotozoom(va.head, math.degrees(angle + wobble[2]), scale)
     head_pos = P(hx, hy)
     body_pos = P(0.0, 0.0)
-    _aura(surf, va, levels, scale, angle, body_pos, now_t)
-    _pipes(surf, P, k, spec, levels, now_t, still, rpm)
+    _aura(surf, va, looks, scale, angle, body_pos, now_t)
+    _pipes(surf, P, k, spec, looks, now_t, still, rpm)
     if spec.get("head_behind"):
         surf.blit(head, head.get_rect(center=head_pos))
         surf.blit(body, body.get_rect(center=body_pos))
     else:
         surf.blit(body, body.get_rect(center=body_pos))
         surf.blit(head, head.get_rect(center=head_pos))
-    _underglow(surf, P, k, spec, levels, now_t, False)
-    _sparkles(surf, P, k, spec, levels, now_t)
-    if rig not in ("bike", "tank", "hover", "horse", "shark"):
+    styling.draw_spoiler(surf, P, k, spec, looks)
+    _underglow(surf, P, k, spec, looks, now_t, False)
+    _sparkles(surf, P, k, spec, looks, now_t)
+    if rig not in ("bike", "tank", "hover", "shark"):
         draw_wheels()
     if rig not in ("bike", "tank"):
-        _rims(surf, k, spec, levels, centres, wheels, now_t)
+        _rims(surf, k, spec, looks, centres, wheels, now_t)
     if spec.get("lightbar"):
         t = pygame.time.get_ticks() / 1000
         for i, (lx, ly) in enumerate(spec["lightbar"]):

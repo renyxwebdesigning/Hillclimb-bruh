@@ -392,6 +392,11 @@ def scene(stage, w, h, radius=12):
     return surf, gy
 
 
+def _lv_key(app):
+    """Cache key part for the current vehicle's upgrades (they change how it looks)."""
+    return tuple(sorted(app.data["levels"][app.data["vehicle"]].items()))
+
+
 def vehicle_on_scene(app, stage, spec, w, h, fit=0.62, levels=None):
     surf, gy = scene(stage, w, h)
     lowest = min(ly - r for _, ly, r in rest_wheel_offsets(spec, vehicle_stats(spec, levels or {})))
@@ -467,7 +472,7 @@ class Setup:
 
     def hero(self):
         app, r = self.app, self.hero_rect
-        return self._cached(("hero", app.data["stage"], app.data["vehicle"], app.data["driver"]),
+        return self._cached(("hero", app.data["stage"], app.data["vehicle"], app.data["driver"], _lv_key(app)),
                             lambda: vehicle_on_scene(app, app.stage, app.vehicle, r.w, r.h, 0.82,
                                                      app.data["levels"][app.data["vehicle"]]))
 
@@ -476,8 +481,9 @@ class Setup:
         if row == "stage":
             return self._cached(("st", app.data["stage"]), lambda: scene(app.stage, t.w, t.h)[0])
         if row == "vehicle":
-            return self._cached(("veh", app.data["vehicle"], app.data["stage"], app.data["driver"]),
-                                lambda: vehicle_on_scene(app, app.stage, app.vehicle, t.w, t.h, 0.8))
+            return self._cached(("veh", app.data["vehicle"], app.data["stage"], app.data["driver"], _lv_key(app)),
+                                lambda: vehicle_on_scene(app, app.stage, app.vehicle, t.w, t.h, 0.8,
+                                                         app.data["levels"][app.data["vehicle"]]))
         key = app.data["driver"]
 
         def face_card():
@@ -719,9 +725,10 @@ class VehicleSelect:
         self.next_btn = Button("DONE", (gfx.W - s(176), gfx.H - s(56)), (250, 64), "green")
 
     def preview(self, spec, r):
-        key = (spec["key"], self.app.data["stage"], self.app.data["driver"])
+        levels = self.app.data["levels"][spec["key"]]
+        key = (spec["key"], self.app.data["stage"], self.app.data["driver"], tuple(sorted(levels.items())))
         if key not in self.previews:
-            self.previews[key] = vehicle_on_scene(self.app, self.app.stage, spec, r.w, s(self.PREVIEW_H), 0.78)
+            self.previews[key] = vehicle_on_scene(self.app, self.app.stage, spec, r.w, s(self.PREVIEW_H), 0.78, levels)
         return self.previews[key]
 
     def select(self, spec):

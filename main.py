@@ -276,7 +276,7 @@ class App:
         self.state = "play"
         pygame.key.stop_text_input()
         self.audio.engine_stop()
-        self.audio.engine_start(spec["sound"])
+        self.audio.engine_start(spec["sound"], (self.data["levels"][spec["key"]].get("turbo", 1) - 1) / 4)
         track = self.data["music_track"]
         self.audio.music(music.STAGE_MUSIC.get(stage["key"], "drive") if track == "auto" else track)
 
@@ -621,7 +621,7 @@ class App:
             if act == "resume":
                 self.pause = None
                 if not run.online:
-                    self.audio.engine_start(run.spec["sound"])
+                    self.audio.engine_start(run.spec["sound"], (run.stats["levels"].get("turbo", 1) - 1) / 4)
             elif act == "restart":
                 self.start_run()
             elif act == "setup":

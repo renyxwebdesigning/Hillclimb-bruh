@@ -13,7 +13,7 @@ from sprites import OUTLINE, STEEL, STEEL_HI, TYRE, _mapper, _poly, _tube, car_b
 
 EXTENT = {"jeep": 2.3, "dirtbike": 1.8, "chopper": 2.0, "monster": 2.7, "supercar": 2.35,
           "tank": 3.15, "police": 2.4, "hoverboard": 2.0, "tesla": 2.35, "mini": 1.8, "b2": 2.5,
-          "excavator": 3.1, "lkw": 2.95, "horse": 2.3, "shark": 2.3}
+          "excavator": 3.1, "lkw": 2.95, "golf": 2.3, "shark": 3.0}
 
 CHROME, CHROME_DK = (214, 220, 228), (118, 124, 134)
 BLACK = (34, 34, 38)
@@ -346,42 +346,41 @@ def _lkw(surf, k, ppm):
     pygame.draw.rect(surf, (230, 30, 30), pygame.Rect(P(-2.62, 0.4), (0.08 * sc, 0.2 * sc)))
 
 
-def _horse(surf, k, ppm):
-    """Horse (without legs: those run, see render) and its rider (without the head)."""
+def _golf(surf, k, ppm):
+    """VW Golf 4 GTI, three-door: round roof, the thick C-pillar, twin round lamps under a clear lens."""
     P, sc = _mapper(surf, ppm, k)
-    coat, coat_dk, coat_hi, mane = (150, 96, 54), (104, 62, 32), (186, 128, 78), (52, 32, 22)
-    # tail
-    _poly(surf, P, sc, [(-1.0, 0.28), (-1.25, 0.2), (-1.42, -0.15), (-1.38, -0.45), (-1.22, -0.2), (-1.05, 0.1)],
-          mane, None)
-    # torso, neck, head
-    body = [(-1.05, 0.05), (-0.95, 0.32), (-0.4, 0.42), (0.4, 0.38), (0.78, 0.5), (1.18, 0.92), (1.32, 1.06),
-            (1.62, 1.04), (1.92, 0.78), (1.88, 0.68), (1.55, 0.7), (1.25, 0.55), (0.98, 0.12), (0.85, -0.22),
-            (0.2, -0.3), (-0.6, -0.26), (-0.98, -0.12)]
+    silver, silver_dk, silver_hi = (178, 184, 192), (120, 126, 136), (224, 228, 234)
+    body = [(-2.0, -0.24), (-2.04, 0.12), (-1.98, 0.5), (-1.86, 0.78), (-1.62, 0.94), (-1.0, 0.99), (-0.2, 0.96),
+            (0.28, 0.86), (0.86, 0.5), (1.5, 0.38), (1.92, 0.3), (2.06, 0.14), (2.08, -0.08), (1.96, -0.28),
+            (1.6, -0.34), (-1.72, -0.34)]
     from drivers import spline
-    body = spline(body, steps=6)
-    _poly(surf, P, sc, body, coat, (70, 40, 20), 0.022)
-    shade = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-    pygame.draw.polygon(shade, (*coat_dk, 255), [P(-0.98, -0.1), P(0.85, -0.2), P(0.2, -0.3), P(-0.6, -0.26)])
-    surf.blit(shade, (0, 0))
-    pygame.draw.line(surf, coat_hi, P(-0.8, 0.3), P(0.35, 0.36), max(1, int(0.04 * sc)))
-    pygame.draw.ellipse(surf, (90, 56, 34), pygame.Rect(P(1.72, 0.84), (0.2 * sc, 0.14 * sc)))     # muzzle
-    pygame.draw.circle(surf, (20, 14, 12), P(1.55, 0.92), 0.04 * sc)                               # eye
-    _poly(surf, P, sc, [(1.36, 1.02), (1.38, 1.2), (1.48, 1.04)], coat_dk, None)                   # ear
-    for i in range(7):                                                                             # mane
-        x, y = 0.8 + i * 0.08, 0.55 + i * 0.075
-        _poly(surf, P, sc, [(x, y), (x - 0.14, y - 0.06), (x + 0.06, y + 0.08)], mane, None)
-    # saddle
-    _poly(surf, P, sc, [(-0.45, 0.4), (-0.4, 0.52), (0.2, 0.52), (0.3, 0.42)], (120, 40, 30), (60, 20, 14), 0.015)
-    pygame.draw.line(surf, (50, 40, 34), P(-0.05, 0.4), P(-0.05, -0.2), max(1, int(0.03 * sc)))   # girth
-    # rider: leg in the stirrup, body leaning forward, hands on the reins
-    pants, jacket, boot = (232, 226, 210), (30, 60, 130), (30, 22, 18)
-    _limb(surf, P, sc, (-0.1, 0.62), (0.18, 0.32), 0.15, pants)
-    _limb(surf, P, sc, (0.18, 0.32), (0.08, 0.02), 0.12, boot)
-    _limb(surf, P, sc, (-0.12, 0.62), (-0.05, 1.22), 0.3, jacket)
-    _limb(surf, P, sc, (0.0, 1.14), (0.32, 0.92), 0.1, jacket)
-    _limb(surf, P, sc, (0.32, 0.92), (0.58, 0.86), 0.09, jacket)
-    pygame.draw.circle(surf, (236, 190, 150), P(0.6, 0.86), 0.05 * sc)
-    pygame.draw.line(surf, (40, 30, 24), P(0.6, 0.86), P(1.78, 0.84), max(1, int(0.018 * sc)))   # reins
+    body = spline(body, steps=4)
+    pygame.draw.polygon(surf, silver, [P(*p) for p in body])
+    pygame.draw.polygon(surf, silver_dk, [P(-2.02, -0.04), P(2.08, -0.04), P(2.08, -0.08), P(1.96, -0.28),
+                                          P(1.6, -0.34), P(-1.72, -0.34), P(-2.0, -0.24)])
+    pygame.draw.line(surf, silver_hi, P(-1.8, 0.47), P(1.55, 0.4), max(1, int(0.035 * sc)))      # shoulder line
+    pygame.draw.rect(surf, (44, 46, 52), pygame.Rect(P(-1.75, 0.08), (3.6 * sc, 0.07 * sc)))     # rubbing strip
+    _arches(surf, P, sc, (-1.28, 1.32), -0.22, 0.42)
+    # windows: long door glass, a small rear quarter, then the fat C-pillar
+    _glass(surf, P, sc, [(-0.62, 0.52), (-0.6, 0.9), (-0.2, 0.9), (0.24, 0.82), (0.74, 0.52)], (34, 44, 60, 170))
+    _glass(surf, P, sc, [(-1.22, 0.55), (-1.12, 0.88), (-0.72, 0.9), (-0.72, 0.55)], (34, 44, 60, 170))
+    pygame.draw.line(surf, (40, 42, 48), P(-0.66, 0.52), P(-0.66, 0.92), max(1, int(0.04 * sc)))  # B pillar
+    pygame.draw.line(surf, silver_dk, P(0.72, 0.48), P(0.7, -0.22), max(1, int(0.015 * sc)))       # door seams
+    pygame.draw.line(surf, silver_dk, P(-0.72, 0.5), P(-0.7, -0.22), max(1, int(0.015 * sc)))
+    pygame.draw.rect(surf, silver_dk, pygame.Rect(P(-0.5, 0.36), (0.22 * sc, 0.045 * sc)), border_radius=int(0.02 * sc))
+    _poly(surf, P, sc, [(0.42, 0.56), (0.62, 0.62), (0.62, 0.5), (0.44, 0.48)], (40, 42, 48), None)    # mirror
+    # stock roof spoiler on the hatch
+    _poly(surf, P, sc, [(-1.62, 0.94), (-1.98, 0.86), (-1.94, 0.8), (-1.6, 0.88)], silver_dk, OUTLINE, 0.012)
+    pygame.draw.polygon(surf, OUTLINE, [P(*p) for p in body], max(1, int(0.022 * sc)))
+    # twin round headlamps under one clear lens, honeycomb grille, red GTI badge
+    pygame.draw.polygon(surf, (225, 232, 240), [P(1.66, 0.36), P(2.0, 0.27), P(2.04, 0.13), P(1.7, 0.18)])
+    for x in (1.78, 1.92):
+        pygame.draw.circle(surf, (250, 250, 236), P(x, 0.24), 0.055 * sc)
+    pygame.draw.rect(surf, (36, 36, 40), pygame.Rect(P(1.98, 0.12), (0.1 * sc, 0.12 * sc)))
+    pygame.draw.polygon(surf, (200, 30, 36), [P(-2.03, 0.5), P(-1.94, 0.5), P(-1.98, 0.2), P(-2.04, 0.2)])  # tail lamp
+    t = gfx.font_px("black_i", 0.17 * sc).render("GTI", True, (210, 24, 30))
+    surf.blit(t, t.get_rect(center=P(1.1, 0.24)))
+    pygame.draw.circle(surf, CHROME, P(-1.98, -0.2), 0.045 * sc)                                      # tailpipe
 
 
 def _tank(surf, k, ppm):
@@ -451,48 +450,108 @@ def _hoverboard(surf, k, ppm):
         pygame.draw.circle(surf, (236, 190, 150), P(hx, hy), 0.055 * sc)
 
 
-def _shark(surf, k, ppm):
-    """The shark (without its tail fin, which beats in render) and its rider (without the head)."""
-    P, sc = _mapper(surf, ppm, k)
-    top, belly, dark = (96, 118, 140), (236, 240, 244), (60, 76, 94)
-    _poly(surf, P, sc, [(-0.2, 0.45), (0.25, 1.15), (0.6, 0.45)], dark, (30, 40, 52), 0.02)          # dorsal fin
+def _shark(surf, k, ppm, stage=2):
+    """The shark (without its tail fin, which beats in render) and its rider (without the head).
+
+    stage 0 is a chubby baby shark with big cute eyes; every stage it grows and gets meaner,
+    up to stage 4: huge, scarred, jaws open full of teeth. Same colours all the way.
+    """
+    P0, sc = _mapper(surf, ppm, k)
+    size = (0.7, 0.84, 1.0, 1.14, 1.3)[stage]
+    chub = (1.18, 1.08, 1.0, 1.0, 1.04)[stage]
+
+    def P(x, y):                                  # the shark grows around a point under the rider's seat
+        return P0(x * size, 0.1 + (y - 0.1) * size * chub)
+    top, belly, dark, line = (96, 118, 140), (236, 240, 244), (60, 76, 94), (30, 40, 52)
+    fin = [(-0.2, 0.45), (0.25, 1.15), (0.6, 0.45)]
+    if stage == 4:                                # a bite taken out of the fin
+        fin = [(-0.2, 0.45), (0.12, 0.9), (0.2, 0.85), (0.28, 1.18), (0.6, 0.45)]
+    pygame.draw.polygon(surf, dark, [P(*p) for p in fin])
+    pygame.draw.polygon(surf, line, [P(*p) for p in fin], max(1, int(0.02 * sc)))
     body = [(-1.75, 0.08), (-1.2, 0.38), (-0.2, 0.55), (0.9, 0.48), (1.6, 0.28), (2.0, 0.02), (1.7, -0.18),
             (0.8, -0.32), (-0.4, -0.3), (-1.4, -0.12)]
     from drivers import spline
     body = spline(body, steps=6)
-    _poly(surf, P, sc, body, top, (30, 40, 52), 0.022)
+    pygame.draw.polygon(surf, top, [P(*p) for p in body])
+    pygame.draw.polygon(surf, line, [P(*p) for p in body], max(1, int(0.022 * sc)))
     under = [(-1.6, 0.0), (-0.4, -0.08), (0.8, -0.08), (1.75, 0.0), (1.7, -0.18), (0.8, -0.32), (-0.4, -0.3),
              (-1.4, -0.12)]
     pygame.draw.polygon(surf, belly, [P(*p) for p in spline(under, steps=6)])
-    _poly(surf, P, sc, [(0.4, -0.15), (0.0, -0.62), (0.75, -0.2)], dark, (30, 40, 52), 0.02)          # pectoral fin
-    for x in (1.0, 1.1, 1.2):                                                                    # gills
+    pec = [(0.4, -0.15), (0.0, -0.62), (0.75, -0.2)]
+    pygame.draw.polygon(surf, dark, [P(*p) for p in pec])
+    pygame.draw.polygon(surf, line, [P(*p) for p in pec], max(1, int(0.02 * sc)))
+    for x in (1.0, 1.1, 1.2)[:2 + (stage >= 2)]:                                                # gills
         pygame.draw.line(surf, dark, P(x, 0.25), P(x - 0.06, -0.02), max(1, int(0.03 * sc)))
-    pygame.draw.circle(surf, (20, 20, 24), P(1.5, 0.16), 0.06 * sc)
-    pygame.draw.circle(surf, (255, 255, 255), P(1.52, 0.18), 0.02 * sc)
-    mouth = [(1.35, -0.06), (1.65, -0.1), (1.92, -0.02)]
-    pygame.draw.lines(surf, (30, 30, 36), False, [P(*p) for p in mouth], max(1, int(0.03 * sc)))
-    for i in range(5):
-        x = 1.4 + i * 0.1
-        pygame.draw.polygon(surf, (255, 255, 255), [P(x, -0.07), P(x + 0.05, -0.07), P(x + 0.025, -0.15)])
-    # rider astride, holding the dorsal fin
+    lw = max(1, int(0.03 * sc))
+    if stage >= 3:                                                                              # scars
+        for (ax, ay), (bx, by) in (((-0.6, 0.42), (-0.25, 0.18)), ((-0.45, 0.45), (-0.12, 0.24)))[:stage - 2]:
+            pygame.draw.line(surf, belly, P(ax, ay), P(bx, by), max(1, int(0.035 * sc)))
+            for f in (0.3, 0.6):
+                mx, my = ax + (bx - ax) * f, ay + (by - ay) * f
+                pygame.draw.line(surf, belly, P(mx - 0.05, my - 0.06), P(mx + 0.05, my + 0.06), lw)
+    # eyes: huge and shiny when little, small and mean when grown
+    ex, ey = P(1.48, 0.17)
+    if stage <= 1:
+        r = (0.2, 0.14)[stage] * sc
+        pygame.draw.circle(surf, (255, 255, 255), (ex, ey), r)
+        pygame.draw.circle(surf, line, (ex, ey), r, lw)
+        pygame.draw.circle(surf, (20, 20, 24), (ex + r * 0.15, ey + r * 0.05), r * 0.68)
+        pygame.draw.circle(surf, (255, 255, 255), (ex + r * 0.32, ey - r * 0.25), r * 0.26)
+        pygame.draw.circle(surf, (255, 255, 255), (ex - r * 0.1, ey + r * 0.3), r * 0.12)
+        for i in range(3):                                                                      # lashes
+            a = math.radians(70 + i * 25)
+            pygame.draw.line(surf, (20, 20, 24), (ex + math.cos(a) * r, ey - math.sin(a) * r),
+                             (ex + math.cos(a) * r * 1.35, ey - math.sin(a) * r * 1.35), lw)
+    else:
+        r = (0.0, 0.0, 0.06, 0.055, 0.05)[stage] * sc
+        pygame.draw.circle(surf, (20, 20, 24), (ex, ey), r)
+        pygame.draw.circle(surf, (255, 255, 255), (ex + r * 0.3, ey - r * 0.3), r * 0.35)
+        if stage >= 3:                                                                          # angry brow
+            pygame.draw.line(surf, line, P(1.36, 0.3), P(1.6, 0.22), max(2, int(0.05 * sc)))
+    # mouth
+    if stage == 0:                                                                              # a little smile
+        pygame.draw.arc(surf, (30, 30, 36), pygame.Rect(P(1.58, 0.02), (0.24 * sc * size, 0.14 * sc * size)),
+                        math.pi * 1.1, math.pi * 1.9, lw)
+    elif stage < 4:
+        mouth = [(1.35, -0.06), (1.65, -0.1), (1.92, -0.02)]
+        pygame.draw.lines(surf, (30, 30, 36), False, [P(*p) for p in mouth], lw)
+        n, tooth = (3, 5, 7)[stage - 1], (0.06, 0.08, 0.1)[stage - 1]
+        for i in range(n):
+            x = 1.4 + i * 0.5 / n
+            pygame.draw.polygon(surf, (255, 255, 255), [P(x, -0.07), P(x + 0.05, -0.07), P(x + 0.025, -0.07 - tooth)])
+    else:                                                                                       # jaws wide open
+        jaw = [(1.25, -0.02), (1.98, 0.06), (1.85, -0.3), (1.35, -0.16)]
+        pygame.draw.polygon(surf, (40, 26, 30), [P(*p) for p in jaw])
+        for i in range(8):
+            x = 1.32 + i * 0.08
+            y_top = -0.02 + (x - 1.25) * 0.11
+            pygame.draw.polygon(surf, (255, 255, 255), [P(x, y_top), P(x + 0.06, y_top + 0.01), P(x + 0.03, y_top - 0.13)])
+            y_bot = -0.16 - (x - 1.35) * 0.28
+            pygame.draw.polygon(surf, (255, 255, 255), [P(x, y_bot), P(x + 0.06, y_bot), P(x + 0.03, y_bot + 0.12)])
+    # rider astride (always the same size), hand on the fin wherever its tip ends up
+    Q = P0
     pants, jacket, boot = (40, 50, 70), (230, 110, 40), (30, 22, 18)
-    _limb(surf, P, sc, (-0.35, 0.72), (-0.1, 0.42), 0.15, pants)
-    _limb(surf, P, sc, (-0.1, 0.42), (-0.25, 0.12), 0.12, boot)
-    _limb(surf, P, sc, (-0.35, 0.72), (-0.28, 1.0), 0.3, jacket)
-    _limb(surf, P, sc, (-0.2, 0.95), (0.15, 0.85), 0.1, jacket)
-    _limb(surf, P, sc, (0.15, 0.85), (0.3, 0.95), 0.09, jacket)
-    pygame.draw.circle(surf, (236, 190, 150), P(0.32, 0.96), 0.05 * sc)
+    hand = (0.25 * size + 0.05, 0.1 + 0.62 * size * chub)
+    _limb(surf, Q, sc, (-0.35, 0.72), (-0.1, 0.42), 0.15, pants)
+    _limb(surf, Q, sc, (-0.1, 0.42), (-0.25, 0.12), 0.12, boot)
+    _limb(surf, Q, sc, (-0.35, 0.72), (-0.28, 1.0), 0.3, jacket)
+    _limb(surf, Q, sc, (-0.2, 0.95), ((hand[0] - 0.2) / 2, (0.95 + hand[1]) / 2 + 0.05), 0.1, jacket)
+    _limb(surf, Q, sc, ((hand[0] - 0.2) / 2, (0.95 + hand[1]) / 2 + 0.05), hand, 0.09, jacket)
+    pygame.draw.circle(surf, (236, 190, 150), Q(*hand), 0.05 * sc)
 
 
 BODIES = {"dirtbike": _dirtbike, "chopper": _chopper, "monster": _monster, "supercar": _supercar,
           "tank": _tank, "police": _police, "hoverboard": _hoverboard, "tesla": _tesla, "mini": _mini, "b2": _b2,
-          "excavator": _excavator, "lkw": _lkw, "horse": _horse, "shark": _shark}
+          "excavator": _excavator, "lkw": _lkw, "golf": _golf, "shark": _shark}
 
 
-def body(key, ppm):
+def body(key, ppm, stage=2):
+    """stage: only the shark has stages (it grows with its upgrades)."""
     if key == "jeep":
         return car_body(ppm)
     size = 2 * EXTENT[key] * ppm
+    if key == "shark":
+        return gfx.supersample(size, size, lambda s, k: _shark(s, k, ppm, stage))
     return gfx.supersample(size, size, lambda s, k: BODIES[key](s, k, ppm))
 
 

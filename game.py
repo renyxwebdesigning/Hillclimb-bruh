@@ -21,6 +21,7 @@ class Run:
         self.max_air = 0.0
         self.pits_cleared = 0
         self.broken = set()             # crate walls smashed this run
+        self._pull_t = 0.0              # how long the turbo has been pulling hard
         self._slow_note = None
         self._skip_to = None            # online: where to respawn after an obstacle got you
         self.night_m = 0.0
@@ -107,6 +108,14 @@ class Run:
                 self.hud.notice({"mud": "MUD!", "ice": "ICE!", "snow": "DEEP SNOW!", "sand": "SAND!",
                                  "oil": "OIL!", "seaweed": "SEAWEED!"}[zone], (230, 230, 240))
         self._zone = zone
+        # turbo blow-off: lifting off the gas after pulling hard goes "pssh"
+        if self.stats["levels"].get("turbo", 1) >= 2:
+            if g:
+                self._pull_t = self._pull_t + dt if car.rpm > 0.55 else 0.0
+            else:
+                if self._pull_t > 0.5:
+                    self.audio.play("turbo", 0.7)
+                self._pull_t = 0.0
         self._acc += dt
         shapes = self._shapes(car, dt) if alive else ()
         steps = 0

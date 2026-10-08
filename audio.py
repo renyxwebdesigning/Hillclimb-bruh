@@ -34,7 +34,7 @@ PROFILES = {
     "mini": dict(idle=38, top=190, tilt=0.9, sub=0.3, f1=(520, 300, 1.6), f2=(1500, 600, 0.8), noise=0.25, gain=0.46),
     "excavator": dict(idle=11, top=46, tilt=1.4, sub=0.8, f1=(80, 50, 2.6), f2=(260, 140, 1.3), noise=0.5, gain=0.66),
     "lkw": dict(idle=10, top=52, tilt=1.35, sub=0.9, f1=(70, 45, 2.8), f2=(240, 120, 1.2), noise=0.42, gain=0.68),
-    "horse": dict(hooves=True, gain=0.7),
+    "golf": dict(idle=32, top=210, tilt=0.88, sub=0.25, f1=(470, 280, 1.7), f2=(1700, 650, 0.9), noise=0.24, gain=0.48),
     "shark": dict(electric=True, gain=0.22),
     "tank": dict(idle=12, top=58, tilt=1.35, sub=0.7, f1=(90, 60, 2.6), f2=(300, 160, 1.2), noise=0.45, gain=0.66),
     "police": dict(idle=20, top=118, tilt=1.1, sub=0.75, f1=(150, 90, 2.2), f2=(450, 220, 1.0), noise=0.26, gain=0.58),
@@ -86,8 +86,11 @@ class EngineSynth:
 
     K = 28
 
-    def __init__(self, profile):
+    def __init__(self, profile, turbo=0.0):
         self.p = PROFILES[profile]
+        self.turbo = turbo              # 0..1: how loud the turbo whistles (the TURBO upgrade)
+        self.spool = 0.0
+        self.whistle_phase = 0.0
         self.rng = np.random.default_rng(3)
         self.phase = 0.0
         self.f = self.p.get("idle", 30)
@@ -110,8 +113,6 @@ class EngineSynth:
         load0, self.load = self.load, self.load + (load - self.load) * 0.5
         if p.get("jet"):
             return self._jet(n, load0, self.load)
-        if p.get("hooves"):
-            return self._hooves(n, rpm)
         if p.get("electric"):
             return self._electric(n, rpm, load0, self.load)
         f_target = p["idle"] + (p["top"] - p["idle"]) * max(0.0, min(1.0, rpm)) ** 1.1
@@ -147,6 +148,12 @@ class EngineSynth:
         self.am = target_am
         level = np.linspace(0.55 + 0.45 * load0, 0.55 + 0.45 * self.load, n)
         y = (wave + rough) * am * level * p["gain"]
+        if self.turbo > 0:              # the turbo spools up with throttle and whistles
+            spool0, self.spool = self.spool, self.spool + (rpm * self.load - self.spool) * 0.25
+            sp = np.linspace(spool0, self.spool, n, endpoint=False)
+            wph = self.whistle_phase + np.cumsum(2 * np.pi * (1600 + 4400 * sp) / SR)
+            self.whistle_phase = float(wph[-1] % (2 * np.pi))
+            y = y + np.sin(wph) * sp ** 1.5 * 0.09 * self.turbo
         return np.tanh(y * 1.6) / np.tanh(1.6)
 
     def _electric(self, n, rpm, l0, l1):
@@ -160,32 +167,6 @@ class EngineSynth:
         level = np.linspace(0.35 + 0.65 * l0, 0.35 + 0.65 * l1, n)
         y = (np.sin(ph) * 0.35 + np.sin(2 * ph) * 0.12 + np.sin(hum_ph) * 0.5) * level * self.p["gain"]
         return np.tanh(y * 1.5) / np.tanh(1.5)
-
-    def _hooves(self, n, rpm):
-        """Galloping: four quick hoof beats per stride, faster with speed, silent when standing still."""
-        if not hasattr(self, "_hit"):
-            t = np.arange(int(SR * 0.09)) / SR
-            body = np.sin(2 * np.pi * 95 * t) * np.exp(-t * 55)
-            click = self.rng.uniform(-1, 1, len(t)) * np.exp(-t * 260) * 0.6
-            self._hit = (body + click) / 1.4
-            self._carry = np.zeros(0)
-        hit = self._hit
-        out = np.zeros(n + len(hit))
-        out[:len(self._carry)] += self._carry               # beats that started in the last chunk
-        rate = 2.6 * max(0.0, min(1.0, rpm)) ** 0.8          # strides per second
-        if rate >= 0.25:
-            stride = SR / rate
-            for beat, gain in ((0.0, 1.0), (0.12, 0.75), (0.48, 0.9), (0.6, 0.7)):
-                start = (beat * stride - self.phase) % stride
-                while start < n:
-                    i = int(start)
-                    out[i:i + len(hit)] += hit * gain
-                    start += stride
-            self.phase = (self.phase + n) % stride
-        else:
-            self.phase = 0.0
-        self._carry = out[n:]
-        return np.tanh(out[:n] * self.p["gain"] * 1.4)
 
     def _jet(self, n, l0, l1):
         noise = self.rng.uniform(-1, 1, n)
@@ -317,6 +298,7 @@ class Audio:
             "count": _to_sound(_tone(660, 0.18, 10, "square"), 0.3),
             "go": _to_sound(_tone(1320, 0.45, 5, "square"), 0.32),
             "finish": _to_sound(self._arpeggio([523, 659, 784, 1046, 1318], 0.09), 0.5),
+            "turbo": _to_sound(self._blow_off(), 0.5),
         }
         self.voices = Voices()
         self.boost_loop = _to_sound(self._whoosh(), 0.5)
@@ -395,6 +377,17 @@ class Audio:
         return out * 0.7
 
     @staticmethod
+    def _blow_off():
+        """Turbo blow-off valve: a sharp hiss with a 'stu-tu-tu' flutter as it dies away."""
+        n = int(SR * 0.55)
+        t = np.arange(n) / SR
+        x = np.random.default_rng(11).uniform(-1, 1, n)
+        hiss = x - np.convolve(x, np.ones(6) / 6, mode="same")           # high-passed: just the hiss
+        flutter = 0.55 + 0.45 * np.sign(np.sin(2 * np.pi * (34 - 20 * t) * t))
+        env = np.minimum(1.0, t / 0.006) * np.exp(-t * 6.5)
+        return hiss * flutter * env * 1.6
+
+    @staticmethod
     def _whoosh():
         """A seamless one-second jet loop (noise crossfaded onto itself)."""
         n, q = SR, SR // 4
@@ -441,10 +434,10 @@ class Audio:
             self.boost_ch.fadeout(160)
 
     # -------------------------------------------------------------- engine
-    def engine_start(self, profile):
+    def engine_start(self, profile, turbo=0.0):
         if not self.ok:
             return
-        self.synth = EngineSynth(profile)
+        self.synth = EngineSynth(profile, turbo)
         self.engine_ch.stop()
         self._feed(0.0, 0.0)
 

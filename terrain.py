@@ -309,7 +309,7 @@ class Terrain:
                 else:
                     ha, hb = h[ia], h[ib]
                     road = ha + (hb - ha) * t
-                    roof = road + 4.0 + 0.25 * np.sin(np.pi * t)          # room for the LKW and the horse rider
+                    roof = road + 4.0 + 0.25 * np.sin(np.pi * t)          # room for the LKW
                     v[sl] = np.maximum(v[sl], roof + 1.0 + 3.4 * np.sin(np.pi * t) ** 0.7)
                     h[sl] = road
                     ceil[sl] = roof
