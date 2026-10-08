@@ -383,6 +383,8 @@ UPGRADES = [
     dict(key="suspension", name="SUSPENSION", max=10, base=350, growth=1.58),
     dict(key="tires", name="TIRES", max=10, base=420, growth=1.6),
     dict(key="boost", name="BOOST", max=10, base=450, growth=1.6),
+    # the premium one: a bit of everything, priced for players who already maxed the rest
+    dict(key="turbo", name="TURBO", max=5, base=9000, growth=2.2),
 ]
 
 
@@ -393,22 +395,24 @@ def upgrade_cost(upgrade, level):
 
 
 def vehicle_stats(spec, levels):
-    e, s, t, b = (levels.get(k, 1) - 1 for k in ("engine", "suspension", "tires", "boost"))
+    e, s, t, b, tu = (levels.get(k, 1) - 1 for k in ("engine", "suspension", "tires", "boost", "turbo"))
 
     def up(pair, lv):
         return pair[0] + pair[1] * lv
     g = GRAVITY_SCALE
+    turbo = 1 + 0.07 * tu                     # up to +28 % power, speed and boost at turbo level 5
     return dict(
-        torque=up(spec["torque"], e) * g,
-        max_spin=up(spec["spin"], e),
-        thrust=up(spec["thrust"], e) * g,
+        torque=up(spec["torque"], e) * g * turbo,
+        max_spin=up(spec["spin"], e) * (1 + 0.05 * tu),
+        thrust=up(spec["thrust"], e) * g * turbo,
         spring=up(spec["spring"], s) * g,
         damping=up(spec["damping"], s) * g ** 0.5,
-        grip=spec["grip"] + 0.075 * t,
-        boost_force=up(spec["boost"], b) * g,
-        boost_seconds=2.0 + 0.35 * b,
-        air_torque=spec["air_torque"] * g,
+        grip=spec["grip"] + 0.075 * t + 0.02 * tu,
+        boost_force=up(spec["boost"], b) * g * turbo,
+        boost_seconds=2.0 + 0.35 * b + 0.25 * tu,
+        air_torque=spec["air_torque"] * g * (1 + 0.08 * tu),
         gravity_scale=g,
+        levels=dict(levels),                  # for the looks: chrome, neon and flames grow with the upgrades
     )
 
 

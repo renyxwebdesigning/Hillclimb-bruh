@@ -13,7 +13,8 @@ import sprites
 import vehicle_art
 from config import BASE_PPM, season_at, vehicle_stats
 from physics import rest_wheel_offsets
-from terrain import CAR_BOXES, RES, START, crusher_bottom, traffic_pos, wrecker_ball
+from terrain import (RES, START, boulder_pos, boulder_sink, crusher_bottom, flame_height, spinner_points,
+                     traffic_pos, wrecker_ball)
 
 
 QUALITY = "high"     # "low" skips pebbles and roadside props
@@ -127,7 +128,7 @@ def compose_vehicle(art, spec, scale, levels=None, angle=0.0, driver="default"):
     def P(x, y):
         return (c + (x * ca - y * sa) * k, c - (x * sa + y * ca) * k)
     _draw_vehicle_parts(surf, P, k, spec, va, scale, angle,
-                        [(lx, ly, r, 0.0) for lx, ly, r in wheels], (0.0, 0.0, 0.0), True)
+                        [(lx, ly, r, 0.0) for lx, ly, r in wheels], (0.0, 0.0, 0.0), True, levels=levels)
     return surf, (c, c)
 
 
@@ -168,9 +169,166 @@ def _horse_legs(surf, P, k, spec, wheels, centres, still):
         pygame.draw.circle(surf, hoof, foot, 0.075 * k)
 
 
-def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, still, flame=None):
+# ------------------------------------------------------------ upgrade looks
+# Every upgrade shows on the vehicle as it levels up:
+#   boost       neon underglow (cyan, then magenta, then cycling rainbow)
+#   tires       gold rims, then spinning gold spokes, then a glowing rim ring
+#   engine      chrome tailpipes, a second pipe, then exhaust flames
+#   suspension  gold springs, then neon springs
+#   turbo       body sparkles, then a glowing aura (blue, purple, gold)
+_PUFFS = {}
+
+
+def _puff(radius, color):
+    key = (int(radius), color)
+    img = _PUFFS.get(key)
+    if img is None:
+        if len(_PUFFS) > 300:
+            _PUFFS.clear()
+        img = _PUFFS[key] = sprites.soft_puff(max(2, int(radius)), color)
+    return img
+
+
+def _rainbow(t, offset=0.0):
+    c = pygame.Color(0)
+    c.hsva = (int((t * 90 + offset) % 360 / 30) * 30, 85, 100, 100)
+    return (c.r, c.g, c.b)
+
+
+def _lv(levels, key):
+    return (levels or {}).get(key, 1)
+
+
+def _neon_color(level, t):
+    if level >= 9:
+        return _rainbow(t)
+    return (40, 220, 255) if level < 6 else (255, 60, 220)
+
+
+def _underglow(surf, P, k, spec, levels, t, behind):
+    b = _lv(levels, "boost")
+    if b < 3:
+        return
+    axles = [w[0] for w in spec["wheels"]]
+    x0, x1 = min(axles) - 0.2, max(axles) + 0.2
+    y = min(ly for _, ly in spec["hull"]) - 0.06
+    col = _neon_color(b, t)
+    if behind:
+        pulse = 0.85 + 0.15 * math.sin(t * 5)
+        n = 6
+        for i in range(n):
+            x = x0 + (x1 - x0) * i / (n - 1)
+            img = _puff(0.5 * k * (1 + 0.06 * (b - 3)) * pulse, col)
+            p = P(x, y - 0.12)
+            surf.blit(img, img.get_rect(center=p))
+    else:
+        pygame.draw.line(surf, col, P(x0 + 0.1, y), P(x1 - 0.1, y), max(2, int(0.06 * k)))
+        pygame.draw.line(surf, (255, 255, 255), P(x0 + 0.2, y), P(x1 - 0.2, y), max(1, int(0.02 * k)))
+
+
+def _aura(surf, va, levels, scale, angle, pos, t):
+    tu = _lv(levels, "turbo")
+    if tu < 3:
+        return
+    col = {3: (80, 180, 255), 4: (190, 90, 255)}.get(tu, (255, 200, 60))
+    cache = va.__dict__.setdefault("auras", {})
+    sil = cache.get(col)
+    if sil is None:
+        mask = pygame.mask.from_surface(va.body)
+        sil = mask.to_surface(setcolor=(*col, 255), unsetcolor=(0, 0, 0, 0))
+        w, h = sil.get_size()
+        small = pygame.transform.smoothscale(sil, (max(1, w // 5), max(1, h // 5)))
+        sil = cache[col] = pygame.transform.smoothscale(small, (w, h))
+    img = pygame.transform.rotozoom(sil, math.degrees(angle), scale * 1.12)
+    img.set_alpha(int(185 + 60 * math.sin(t * 4)))
+    surf.blit(img, img.get_rect(center=pos))
+
+
+def _sparkles(surf, P, k, spec, levels, t):
+    tu = _lv(levels, "turbo")
+    if tu < 2:
+        return
+    hull = spec["hull"]
+    for i in range(tu):
+        ph = t * 1.3 + i * 0.37
+        lx, ly = hull[(int(ph) * 3 + i * 5) % len(hull)]
+        life = ph % 1.0
+        size = math.sin(life * math.pi) * 0.16 * k
+        if size < 1:
+            continue
+        cx, cy = P(lx * 0.8, ly * 0.8 + 0.1)
+        col = (255, 250, 210)
+        pygame.draw.polygon(surf, col, [(cx, cy - size), (cx + size * 0.25, cy - size * 0.25), (cx + size, cy),
+                                        (cx + size * 0.25, cy + size * 0.25), (cx, cy + size),
+                                        (cx - size * 0.25, cy + size * 0.25), (cx - size, cy),
+                                        (cx - size * 0.25, cy - size * 0.25)])
+
+
+def _rims(surf, k, spec, levels, centres, wheels, t):
+    tl = _lv(levels, "tires")
+    if tl < 4 or spec["rig"] in ("horse", "hover", "shark"):
+        return
+    gold, gold_dk = (240, 186, 40), (170, 120, 20)
+    for ctr, w, sw in zip(centres, wheels, spec["wheels"]):
+        r = sw[2] * k
+        pygame.draw.circle(surf, gold_dk, ctr, r * 0.56, max(2, int(0.07 * k)))
+        pygame.draw.circle(surf, gold, ctr, r * 0.56, max(1, int(0.04 * k)))
+        if tl >= 7:
+            spin = -w[3]
+            for j in range(5):
+                a = spin + j * math.tau / 5
+                pygame.draw.line(surf, gold, ctr, (ctr[0] + math.cos(a) * r * 0.52, ctr[1] + math.sin(a) * r * 0.52),
+                                 max(1, int(0.045 * k)))
+            pygame.draw.circle(surf, gold_dk, ctr, r * 0.14)
+        if tl >= 9:
+            col = _rainbow(t, 40) if tl >= 10 else (120, 255, 255)
+            pygame.draw.circle(surf, col, ctr, r * 0.92, max(1, int(0.035 * k)))
+
+
+def _pipes(surf, P, k, spec, levels, t, still, rpm):
+    e = _lv(levels, "engine")
+    if e < 3:
+        return
+    ex, ey = spec["exhaust"]
+    up = ey > 0.6                                 # exhaust on the roof (monster truck, LKW): upright stacks
+    chrome, dark = (214, 220, 230), (90, 94, 104)
+    for off in ((0.0, -0.12) if e >= 6 else (0.0,)):
+        if up:
+            a, b = P(ex + off, ey - 0.3), P(ex + off, ey + 0.12)
+            tip, fwd, side = (ex + off, ey + 0.12), (0.0, 1.0), (1.0, 0.0)
+        else:
+            a, b = P(ex + 0.3, ey + off), P(ex - 0.08, ey + off)
+            tip, fwd, side = (ex - 0.08, ey + off), (-1.0, 0.0), (0.0, 1.0)
+        pygame.draw.line(surf, dark, a, b, max(3, int(0.13 * k)))
+        pygame.draw.line(surf, chrome, a, b, max(2, int(0.08 * k)))
+        pygame.draw.circle(surf, (40, 40, 44), b, 0.05 * k)
+        if e >= 8:
+            power = 0.35 if still else rpm
+            if power < 0.3:
+                continue
+            L = (0.2 + 0.45 * power) * (0.7 + 0.3 * math.sin(t * 40 + off * 50))
+            outer, inner = ((60, 120, 255), (200, 240, 255)) if e >= 10 else ((255, 120, 30), (255, 230, 120))
+            for col, w, f in ((outer, 0.09, 1.0), (inner, 0.045, 0.6)):
+                pygame.draw.polygon(surf, col, [P(tip[0] + side[0] * w, tip[1] + side[1] * w),
+                                                P(tip[0] + fwd[0] * L * f, tip[1] + fwd[1] * L * f),
+                                                P(tip[0] - side[0] * w, tip[1] - side[1] * w)])
+
+
+def _spring_color(levels, big):
+    sl = _lv(levels, "suspension")
+    if sl >= 8:
+        return (60, 230, 255)
+    if sl >= 4:
+        return (240, 186, 40)
+    return (230, 70, 50) if big else (176, 180, 188)
+
+
+def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, still, flame=None, levels=None,
+                        rpm=0.0):
     """Shared by gameplay and menus. wheels: (lx, ly, radius, spin) in local or world coords via P."""
     rig = spec["rig"]
+    now_t = pygame.time.get_ticks() / 1000
+    _underglow(surf, P, k, spec, levels, now_t, True)
     anchors = [(w[0], w[1]) for w in spec["wheels"]]
     wheel_imgs = [pygame.transform.rotozoom(img, math.degrees(w[3]), scale) for img, w in zip(va.wheels, wheels)]
     centres = [P(w[0], w[1]) for w in wheels] if still else [w[4] for w in wheels]
@@ -178,6 +336,8 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
     def draw_wheels():
         for img, ctr in zip(wheel_imgs, centres):
             surf.blit(img, img.get_rect(center=ctr))
+        if rig in ("bike", "tank"):
+            _rims(surf, k, spec, levels, centres, wheels, now_t)
 
     if flame is not None:
         img, pos = flame
@@ -261,7 +421,7 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
                 side = amp if i % 2 else -amp
                 pts.append((a[0] + dx * i / 14 + ux * side, a[1] + dy * i / 14 + uy * side))
             pts.append(ctr)
-            pygame.draw.lines(surf, (230, 70, 50) if w[2] > 0.6 else (176, 180, 188), False, pts,
+            pygame.draw.lines(surf, _spring_color(levels, w[2] > 0.6), False, pts,
                               max(2, int((0.05 if w[2] > 0.6 else 0.035) * k)))
 
     body = pygame.transform.rotozoom(va.body, math.degrees(angle), scale)
@@ -269,14 +429,20 @@ def _draw_vehicle_parts(surf, P, k, spec, va, scale, angle, wheels, wobble, stil
     head = pygame.transform.rotozoom(va.head, math.degrees(angle + wobble[2]), scale)
     head_pos = P(hx, hy)
     body_pos = P(0.0, 0.0)
+    _aura(surf, va, levels, scale, angle, body_pos, now_t)
+    _pipes(surf, P, k, spec, levels, now_t, still, rpm)
     if spec.get("head_behind"):
         surf.blit(head, head.get_rect(center=head_pos))
         surf.blit(body, body.get_rect(center=body_pos))
     else:
         surf.blit(body, body.get_rect(center=body_pos))
         surf.blit(head, head.get_rect(center=head_pos))
+    _underglow(surf, P, k, spec, levels, now_t, False)
+    _sparkles(surf, P, k, spec, levels, now_t)
     if rig not in ("bike", "tank", "hover", "horse", "shark"):
         draw_wheels()
+    if rig not in ("bike", "tank"):
+        _rims(surf, k, spec, levels, centres, wheels, now_t)
     if spec.get("lightbar"):
         t = pygame.time.get_ticks() / 1000
         for i, (lx, ly) in enumerate(spec["lightbar"]):
@@ -1029,6 +1195,14 @@ class WorldRenderer:
                 self._draw_crusher(surf, cam, th, t)
             elif kind == "wrecker":
                 self._draw_wrecker(surf, cam, th, t)
+            elif kind == "boulder":
+                self._draw_boulder(surf, cam, th, t)
+            elif kind == "flames":
+                self._draw_flames(surf, cam, th, t, i)
+            elif kind == "spinner":
+                self._draw_spinner(surf, cam, th, t)
+            elif kind == "spikes":
+                self._draw_spikes(surf, cam, th)
 
     def _draw_crates(self, surf, cam, th):
         ppm = cam.ppm
@@ -1099,6 +1273,90 @@ class WorldRenderer:
         for bx in (rect.x + 0.2 * ppm, rect.right - 0.2 * ppm):
             pygame.draw.circle(surf, (60, 62, 70), (bx, rect.y + 0.25 * ppm), 0.07 * ppm)
         self._lamps.append((rect.centerx, rect.bottom))
+
+    def _draw_boulder(self, surf, cam, th, t):
+        terr, ppm = self.terrain, cam.ppm
+        # the rock pile they come out of
+        pile = terr.height(th["a"] + 1.5)
+        for dx, dy, r in ((0.6, 0.5, 1.1), (2.0, 0.6, 1.3), (1.3, 1.6, 0.9), (3.0, 0.4, 0.8)):
+            c = cam.to_screen(th["a"] + dx, pile + dy)
+            pygame.draw.circle(surf, (96, 90, 86), c, r * ppm)
+            pygame.draw.circle(surf, (128, 122, 116), (c[0] - r * 0.3 * ppm, c[1] - r * 0.3 * ppm), r * 0.45 * ppm)
+        x, rolled = boulder_pos(th, t)
+        if x is None:
+            return
+        r = th["r"]
+        y = terr.height(x) + r - boulder_sink(th, t)
+        c = cam.to_screen(x, y)
+        R = r * ppm
+        pygame.draw.circle(surf, (84, 76, 70), c, R)
+        pygame.draw.circle(surf, (120, 110, 100), (c[0] - R * 0.15, c[1] - R * 0.15), R * 0.8)
+        ang = rolled / r                                         # rolls towards -x: counter-clockwise on screen
+        for k in range(3):                                       # cracks that turn with it
+            a = ang + k * 2.1
+            p0 = (c[0] + math.cos(a) * R * 0.2, c[1] - math.sin(a) * R * 0.2)
+            p1 = (c[0] + math.cos(a + 0.3) * R * 0.75, c[1] - math.sin(a + 0.3) * R * 0.75)
+            pygame.draw.line(surf, (60, 54, 50), p0, p1, max(1, int(0.06 * ppm)))
+        pygame.draw.circle(surf, (150, 140, 130), (c[0] - R * 0.4, c[1] - R * 0.42), R * 0.18)
+
+    def _draw_flames(self, surf, cam, th, t, i):
+        ppm = cam.ppm
+        base = cam.to_screen(th["x"], th["y"])
+        pygame.draw.rect(surf, (60, 62, 68), (base[0] - 0.4 * ppm, base[1] - 0.3 * ppm, 0.8 * ppm, 0.34 * ppm),
+                         border_radius=int(0.06 * ppm))
+        pygame.draw.rect(surf, (250, 200, 30), (base[0] - 0.4 * ppm, base[1] - 0.3 * ppm, 0.8 * ppm, 0.08 * ppm))
+        f = flame_height(th, t)
+        u = ((t + th["phase"]) / th["period"]) % 1.0
+        if f <= 0:
+            if u > 0.8:                                          # about to fire: it hisses and glows
+                pygame.draw.circle(surf, (255, 150, 40), (base[0], base[1] - 0.32 * ppm), 0.14 * ppm)
+            return
+        for col, w, k in (((255, 90, 20), 0.55, 1.0), ((255, 170, 40), 0.38, 0.8), ((255, 240, 160), 0.2, 0.55)):
+            hgt = f * k * (0.92 + 0.08 * math.sin(t * 30 + i))
+            pts = [(base[0] - w * ppm, base[1] - 0.3 * ppm), (base[0] + w * ppm, base[1] - 0.3 * ppm)]
+            for j in range(1, 6):
+                fy = j / 6
+                wob = math.sin(t * 25 + j * 1.7 + i) * 0.08
+                pts.append((base[0] + (w * (1 - fy) + wob) * ppm, base[1] - (0.3 + hgt * fy) * ppm))
+            pts.append((base[0], base[1] - (0.3 + hgt) * ppm))
+            for j in range(5, 0, -1):
+                fy = j / 6
+                wob = math.sin(t * 23 + j * 1.3 + i) * 0.08
+                pts.append((base[0] - (w * (1 - fy) - wob) * ppm, base[1] - (0.3 + hgt * fy) * ppm))
+            pygame.draw.polygon(surf, col, pts)
+        self._lamps.append((base[0], base[1] - (0.3 + f * 0.5) * ppm))
+
+    def _draw_spinner(self, surf, cam, th, t):
+        ppm = cam.ppm
+        foot = cam.to_screen(th["x"], th["y"] - 0.1)
+        hub = cam.to_screen(th["x"], th["py"])
+        pygame.draw.polygon(surf, (70, 74, 82), [(foot[0] - 0.6 * ppm, foot[1]), (foot[0] + 0.6 * ppm, foot[1]),
+                                                 (hub[0] + 0.15 * ppm, hub[1]), (hub[0] - 0.15 * ppm, hub[1])])
+        pts = spinner_points(th, t)
+        a, b = cam.to_screen(*pts[0]), cam.to_screen(*pts[-1])
+        pygame.draw.line(surf, (40, 40, 46), a, b, max(4, int(0.5 * ppm)))
+        pygame.draw.line(surf, (220, 50, 40), a, b, max(3, int(0.36 * ppm)))
+        for k in range(8):                                       # white warning bands
+            f = (k + 0.5) / 8
+            p = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+            q = (a[0] + (b[0] - a[0]) * (f + 0.04), a[1] + (b[1] - a[1]) * (f + 0.04))
+            pygame.draw.line(surf, (250, 250, 250), p, q, max(3, int(0.36 * ppm)))
+        pygame.draw.circle(surf, (40, 40, 46), hub, 0.32 * ppm)
+        pygame.draw.circle(surf, (170, 174, 182), hub, 0.16 * ppm)
+
+    def _draw_spikes(self, surf, cam, th):
+        ppm = cam.ppm
+        n = max(3, int((th["x1"] - th["x0"]) / 0.35))
+        y = th["y"]
+        base_l, base_r = cam.to_screen(th["x0"], y), cam.to_screen(th["x1"], y)
+        pygame.draw.rect(surf, (54, 56, 62), (base_l[0], base_l[1] - 0.08 * ppm, base_r[0] - base_l[0], 0.2 * ppm))
+        for k in range(n):
+            x = th["x0"] + (th["x1"] - th["x0"]) * (k + 0.5) / n
+            p = cam.to_screen(x, y)
+            w = 0.15 * ppm
+            tip = (p[0], p[1] - 0.5 * ppm)
+            pygame.draw.polygon(surf, (150, 156, 166), [(p[0] - w, p[1]), (p[0] + w, p[1]), tip])
+            pygame.draw.line(surf, (226, 230, 236), (p[0] - w * 0.4, p[1] - 0.05 * ppm), tip, max(1, int(0.03 * ppm)))
 
     def _draw_wrecker(self, surf, cam, th, t):
         ppm = cam.ppm
@@ -1358,7 +1616,9 @@ class WorldRenderer:
                 big = 1.35
             img = pygame.transform.rotozoom(img, math.degrees(car.angle), sc * big)
             flame = (img, P(*car.NOZZLE))
-        _draw_vehicle_parts(surf, P, cam.ppm, car.spec, va, sc, car.angle, wheels, wobble, False, flame)
+        levels = getattr(car, "stats", {}).get("levels")
+        _draw_vehicle_parts(surf, P, cam.ppm, car.spec, va, sc, car.angle, wheels, wobble, False, flame, levels,
+                            getattr(car, "rpm", 0.5))
 
     def draw(self, surf, cam, views, particles, now, dt, best, darkness=0.0, sunset=0.0, race_m=0):
         """views: list of CarView, the player's own car last (drawn on top)."""

@@ -261,7 +261,9 @@ class Run:
             if kind == "car" and abs(nx) < 0.75:
                 continue                                    # on the roof: fine
             reason, short = {"car": ("CRASHED INTO A CAR!", "CRASH!"), "traffic": ("HIT BY A CAR!", "CRASH!"),
-                             "crusher": ("SQUASHED!", "SQUASHED!"), "wrecker": ("SMASHED!", "SMASHED!")}[kind]
+                             "crusher": ("SQUASHED!", "SQUASHED!"), "wrecker": ("SMASHED!", "SMASHED!"),
+                             "boulder": ("FLATTENED BY A BOULDER!", "FLATTENED!"), "flames": ("TOASTED!", "TOASTED!"),
+                             "spinner": ("WHACKED!", "WHACKED!"), "spikes": ("SPIKED!", "SPIKED!")}[kind]
             end = next((b for a, b, _ in t.blocks if a - 2 <= th["x"] <= b + 2), th["x"] + 3)
             self._skip_to = end + 3.0
             self.audio.play("crash")

@@ -18,6 +18,8 @@ RES = 0.25          # metres between height samples
 START = -60.0       # world x of the first sample
 LENGTH = 30000.0    # metres of track
 INF = float("inf")
+# set pieces built around obstacles (terrain.things); feature_at reports their stretch by this name
+BLOCK_KINDS = ("cars", "traffic", "crates", "wrecker", "boulder", "flames", "spinner", "spikes")
 
 
 def _catmull_rom_noise(u, rng):
@@ -98,7 +100,8 @@ class Terrain:
         table = [("bridge", 2.0), ("tunnel", 1.4), ("cave", 3.4), ("wall", 2.0), ("steps", 1.4),
                  ("pit", 3.0 if lava else 0.0 if wet else 1.6),
                  ("cars", 0.0 if wet else 2.6 if city else 1.6), ("traffic", 0.0 if wet else 2.6 if city else 1.2),
-                 ("crates", 2.4), ("wrecker", 1.4)]
+                 ("crates", 2.2), ("wrecker", 1.3), ("boulder", 1.3), ("flames", 1.4), ("spinner", 1.2),
+                 ("spikes", 0.0 if wet else 1.3)]
         kinds = [k for k, _ in table]
         odds = np.array([w for _, w in table])
         odds /= odds.sum()
@@ -106,8 +109,8 @@ class Terrain:
         while x < LENGTH - 300:
             hard = float(_smoothstep(150, 3000, np.array(x)))     # 0 near the start, 1 from 3 km on
             kind = kinds[int(rng.choice(len(kinds), p=odds))]
-            if kind in ("wrecker", "traffic") and x < 450:             # warm up before anything moves
-                kind = "crates"
+            while x < 450 and kind in ("wrecker", "traffic", "boulder", "spinner", "flames", "spikes"):
+                kind = kinds[int(rng.choice(len(kinds), p=odds))]         # warm up before anything moves
             for _ in range(14):
                 span = {"bridge": lambda: rng.uniform(13, 22),
                         "tunnel": lambda: rng.uniform(26, 42),
@@ -118,7 +121,17 @@ class Terrain:
                         "cars": lambda: 0.0,
                         "traffic": lambda: rng.uniform(26, 34),
                         "crates": lambda: 30.0,
-                        "wrecker": lambda: 22.0}[kind]()
+                        "wrecker": lambda: 22.0,
+                        "boulder": lambda: 34.0,
+                        "flames": lambda: 0.0,
+                        "spinner": lambda: 22.0,
+                        "spikes": lambda: 0.0}[kind]()
+                if kind == "flames":
+                    jets = 2 + int(rng.random() < 0.4 + 0.5 * hard) + int(rng.random() < 0.4 * hard)
+                    span = 12 + 4.0 * jets + 8
+                elif kind == "spikes":
+                    spiked = rng.uniform(3.5, 5.0) + 1.2 * hard
+                    span = 11 + 1.0 + spiked + 12
                 if kind == "cars":
                     count = 1 + int(rng.random() < 0.25 + 0.5 * hard) + int(rng.random() < 0.3 * hard)
                     span = 11 + 2.5 + 4.0 * count + 12
@@ -145,7 +158,7 @@ class Terrain:
             gap = rng.uniform(170, 330) * (1.0 - 0.45 * hard)
             sl = slice(ia, ib + 1)
             t = (xs[sl] - xs[ia]) / (xs[ib] - xs[ia])
-            if kind in ("cars", "traffic", "crates", "wrecker"):
+            if kind in BLOCK_KINDS:
                 self._level(xs, h, v, ia, ib)
                 g = lambda px: float(h[int((px - START) / RES)])          # noqa: E731
                 a = float(xs[ia])
@@ -168,18 +181,52 @@ class Terrain:
                     h[seg] += 1.5 * u ** 2.2
                     v[seg] = h[seg]
                     self.things.append(dict(kind="traffic", a=a + 12, b=float(xs[ib]) - 3, x=a + 12,
-                                            period=float(rng.uniform(4.0, 6.5) - 1.2 * hard),
+                                            period=float(rng.uniform(5.5, 7.5) - 1.0 * hard),
                                             phase=float(rng.uniform(0, 10)), variant=int(rng.integers(3)), y=g(a + 12)))
                 elif kind == "crates":
                     # A wall you can't jump: smash through it with enough speed (boost helps).
                     cx = a + 24
                     self.things.append(dict(kind="crates", x=cx, y=g(cx), w=1.0 + 0.8 * int(rng.random() < hard),
                                             hgt=2.6, need=5.5 + 4.0 * hard))
+                elif kind == "boulder":
+                    # Boulders keep rolling down at you out of a rock pile; jump them off the kicker.
+                    seg = slice(ia, int((a + 9 - START) / RES) + 1)
+                    u = (xs[seg] - a) / 9
+                    h[seg] += 1.7 * u ** 2.2
+                    v[seg] = h[seg]
+                    # one boulder per wave, then a quiet spell: go right after one has rolled past
+                    self.things.append(dict(kind="boulder", a=float(xs[ib]) - 2, b=a + 10.5, x=a + 25, r=0.9,
+                                            period=float(rng.uniform(5.5, 6.5) - 0.6 * hard), roll=0.45,
+                                            phase=float(rng.uniform(0, 10)), y=g(a + 25)))
+                elif kind == "flames":
+                    # Gas jets that flare up one after the other; the gap between flares runs forward at
+                    # about driving speed, so ride it.
+                    period = float(rng.uniform(2.6, 3.4) - 0.4 * hard)
+                    phase0 = float(rng.uniform(0, 10))
+                    for k in range(jets):
+                        jx = a + 12 + 4.0 * k
+                        self.things.append(dict(kind="flames", x=jx, y=g(jx), period=period,
+                                                phase=phase0 - k * 4.0 / 10.0, duty=0.36 + 0.1 * hard))
+                elif kind == "spinner":
+                    # A two-armed bar turning over the road like a windmill.
+                    cx = a + 12
+                    self.things.append(dict(kind="spinner", x=cx, y=g(cx), arm=3.0, py=g(cx) + 3.1,
+                                            period=float(rng.uniform(4.2, 5.4) - 0.8 * hard),
+                                            phase=float(rng.uniform(0, 10))))
+                elif kind == "spikes":
+                    # A kicker, then a bed of spikes to fly over.
+                    lip = a + 11
+                    seg = slice(ia, int((lip - START) / RES) + 1)
+                    u = (xs[seg] - a) / 11
+                    h[seg] += (1.7 + 0.8 * hard) * u ** 2.2
+                    v[seg] = h[seg]
+                    x0 = lip + 1.0
+                    self.things.append(dict(kind="spikes", x=x0 + spiked / 2, x0=x0, x1=x0 + spiked, y=g(x0 + spiked / 2)))
                 else:
                     # A wrecking ball swinging across the road from a crane.
                     cx = a + 12
                     self.things.append(dict(kind="wrecker", x=cx, y=g(cx), py=g(cx) + 6.3, length=4.7, r=0.8,
-                                            amp=1.25, period=float(rng.uniform(3.6, 4.8) - 0.6 * hard),
+                                            amp=1.25, period=float(rng.uniform(4.2, 5.4) - 0.6 * hard),
                                             phase=float(rng.uniform(0, 10))))
                 self.blocks.append((a, float(xs[ib]), kind))
             elif kind == "pit":
@@ -338,7 +385,7 @@ class Terrain:
 
     def thing_range(self, x0, x1):
         """Indices of the things that may reach into [x0, x1]."""
-        return range(bisect.bisect_left(self.thing_x, x0 - 12), bisect.bisect_right(self.thing_x, x1 + 12))
+        return range(bisect.bisect_left(self.thing_x, x0 - 16), bisect.bisect_right(self.thing_x, x1 + 16))
 
     def feature_at(self, x, pad=0.0):
         for a, b, _ in self.bridges:
@@ -513,7 +560,7 @@ class Terrain:
         x = 120.0
         while x < LENGTH - 50:
             x += float(rng.uniform(160, 270))
-            if self.feature_at(x, 6.0) in ("tunnel", "cars", "traffic", "crates", "wrecker") or self.pit_at(x) \
+            if self.feature_at(x, 6.0) in ("tunnel",) + BLOCK_KINDS or self.pit_at(x) \
                     or self.pit_at(x + 3):
                 x += 40.0
             nitro.append([x, self.height(x) + 1.05, False])
@@ -527,7 +574,7 @@ class Terrain:
             if any(fx - 10 < x + span and x < fx + 10 for fx in fuel_x):
                 x += 22.0
                 continue
-            if {self.feature_at(x, 2), self.feature_at(x + span, 2)} & {"cars", "traffic", "crates", "wrecker"}:
+            if {self.feature_at(x, 2), self.feature_at(x + span, 2)} & set(BLOCK_KINDS):
                 x += 30.0
                 continue
             if self.feature_at(x, 2) == "tunnel" or self.feature_at(x + span, 2) == "tunnel":
@@ -642,5 +689,51 @@ def thing_shapes(th, t, idx, terrain):
     if kind == "crusher":
         b = crusher_bottom(th, t)
         return [("box", th["x"] - th["w"] / 2, b, th["x"] + th["w"] / 2, th["top"], idx, False)]
+    if kind == "boulder":
+        x, _ = boulder_pos(th, t)
+        if x is None:
+            return []
+        return [("ball", x, terrain.height(x) + th["r"] - boulder_sink(th, t), th["r"], idx, False)]
+    if kind == "flames":
+        f = flame_height(th, t)
+        return [("box", th["x"] - 0.3, th["y"], th["x"] + 0.3, th["y"] + f, idx, False)] if f > 0.3 else []
+    if kind == "spinner":
+        out = []
+        for cx, cy in spinner_points(th, t):
+            out.append(("ball", cx, cy, 0.28, idx, False))
+        return out
+    if kind == "spikes":
+        return [("box", th["x0"], th["y"] - 0.2, th["x1"], th["y"] + 0.45, idx, False)]
     cx, cy = wrecker_ball(th, t)
     return [("ball", cx, cy, th["r"], idx, False)]
+
+
+def boulder_pos(th, t):
+    """(x, rolled distance) of this wave's boulder on its way from a down to b; None between waves."""
+    u = ((t + th["phase"]) / th["period"]) % 1.0 / th["roll"]
+    if u >= 1.0:
+        return None, 0.0
+    d = (th["a"] - th["b"]) * u
+    return th["a"] - d, d
+
+
+def boulder_sink(th, t):
+    """How far the boulder has crumbled into the ground at the end of its run."""
+    u = ((t + th["phase"]) / th["period"]) % 1.0 / th["roll"]
+    return max(0.0, (u - 0.88) / 0.12) * 2 * th["r"]
+
+
+def flame_height(th, t):
+    """Height of a gas jet's flame (0 while it is off)."""
+    u = ((t + th["phase"]) / th["period"]) % 1.0
+    if u > th["duty"]:
+        return 0.0
+    k = min(1.0, u / 0.06, (th["duty"] - u) / 0.06)
+    return 3.4 * k
+
+
+def spinner_points(th, t):
+    """Points along both arms of the spinner, for collisions and drawing."""
+    ang = 2 * math.pi * (t + th["phase"]) / th["period"]          # the low arm sweeps forward
+    ca, sa = math.cos(ang), math.sin(ang)
+    return [(th["x"] + ca * d, th["py"] + sa * d) for d in (-3.0, -2.4, -1.8, -1.2, 1.2, 1.8, 2.4, 3.0)]

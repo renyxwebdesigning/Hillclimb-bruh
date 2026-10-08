@@ -323,6 +323,22 @@ def upgrade_icon(key, size):
             for i in range(5):
                 a = i * math.tau / 5
                 pygame.draw.circle(surf, dark, (cx + math.cos(a) * sc * 0.12, cy + math.sin(a) * sc * 0.12), sc * 0.035)
+        elif key == "turbo":                          # a turbocharger snail with a lightning bolt
+            gold = (236, 176, 40)
+            pygame.draw.circle(surf, dark, (cx - sc * 0.06, cy + sc * 0.04), sc * 0.36)
+            pygame.draw.circle(surf, mid, (cx - sc * 0.06, cy + sc * 0.04), sc * 0.26)
+            pts = []
+            for i in range(40):
+                a = i / 39 * math.tau * 1.6
+                r = sc * (0.04 + 0.18 * i / 39)
+                pts.append((cx - sc * 0.06 + math.cos(a) * r, cy + sc * 0.04 + math.sin(a) * r))
+            pygame.draw.lines(surf, dark, False, pts, max(1, int(sc * 0.04)))
+            pygame.draw.rect(surf, dark, (cx + sc * 0.1, cy - sc * 0.36, sc * 0.3, sc * 0.16))
+            bolt = [(0.12, -0.46), (-0.08, -0.06), (0.04, -0.06), (-0.1, 0.42), (0.18, -0.02), (0.05, -0.02),
+                    (0.22, -0.46)]
+            pygame.draw.polygon(surf, gold, [(cx + x * sc + sc * 0.18, cy + y * sc) for x, y in bolt])
+            pygame.draw.polygon(surf, (150, 100, 10), [(cx + x * sc + sc * 0.18, cy + y * sc) for x, y in bolt],
+                                max(1, int(sc * 0.02)))
         else:  # boost: a nozzle with a flame
             pygame.draw.polygon(surf, (255, 140, 30), [(cx - sc * 0.05, cy - sc * 0.16), (cx - sc * 0.5, cy),
                                                        (cx - sc * 0.05, cy + sc * 0.16)])
@@ -866,13 +882,14 @@ def vehicle_head_preview(app, radius):
 
 
 class Garage:
-    TW, TH, GAP = 230, 200, 22
+    TW, TH, GAP = 214, 200, 16
 
     def __init__(self, app):
         self.app = app
         self.bg = background(gfx.W, gfx.H)
         self.icons = {u["key"]: upgrade_icon(u["key"], s(74)) for u in UPGRADES}
-        x0 = gfx.W / 2 - s(4 * self.TW + 3 * self.GAP) / 2
+        n = len(UPGRADES)
+        x0 = gfx.W / 2 - s(n * self.TW + (n - 1) * self.GAP) / 2
         self.tiles = [(u, pygame.Rect(x0 + s(i * (self.TW + self.GAP)), s(318), s(self.TW), s(self.TH)))
                       for i, u in enumerate(UPGRADES)]
         self.tile_img = gfx.rounded(s(self.TW), s(self.TH), s(14), (226, 228, 232), top=(255, 255, 255))
@@ -893,7 +910,7 @@ class Garage:
                 app.start_run()
             elif ev.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
                 app.goto("setup")
-            elif pygame.K_1 <= ev.key <= pygame.K_4:
+            elif pygame.K_1 <= ev.key < pygame.K_1 + len(UPGRADES):
                 self.buy(UPGRADES[ev.key - pygame.K_1])
             elif ev.key == pygame.K_h:
                 self.toggle_horn()
@@ -937,9 +954,10 @@ class Garage:
 
     def draw(self, surf, mouse, now):
         app = self.app
-        key = (app.stage["key"], app.data["vehicle"], app.data["driver"])
-        if self.showcase_key != key:
-            self.showcase = vehicle_on_scene(app, app.stage, app.vehicle, gfx.W, s(236), 0.8)
+        levels = app.data["levels"][app.data["vehicle"]]
+        key = (app.stage["key"], app.data["vehicle"], app.data["driver"], tuple(sorted(levels.items())))
+        if self.showcase_key != key:                  # redrawn after every purchase: the upgrades show on it
+            self.showcase = vehicle_on_scene(app, app.stage, app.vehicle, gfx.W, s(236), 0.8, levels)
             self.showcase_key = key
         surf.blit(self.bg, (0, 0))
         surf.blit(self.showcase, (0, s(64)))
@@ -960,6 +978,8 @@ class Garage:
             rect = r.move(0, -s(3) if hover and not maxed else 0)
             pygame.draw.rect(surf, (12, 14, 16), rect.move(0, s(5)), border_radius=si(14))
             surf.blit(self.tile_hover if hover else self.tile_img, rect)
+            if u["key"] == "turbo":                   # the premium upgrade gets a gold frame
+                pygame.draw.rect(surf, (236, 176, 40), rect, max(2, si(4)), border_radius=si(14))
             gfx.blit_text(surf, "cond", 22, u["name"], dark, (rect.centerx, rect.y + s(22)), "center")
             ic = self.icons[u["key"]]
             surf.blit(ic, ic.get_rect(center=(rect.centerx, rect.y + s(78))))
@@ -987,7 +1007,7 @@ class Garage:
                 a = int(150 * (1 - (now - f[0]) / 0.4))
                 pygame.draw.rect(ov, (120, 230, 80, a) if f[1] else (240, 60, 50, a), ov.get_rect(), border_radius=si(14))
                 surf.blit(ov, rect)
-        gfx.blit_text(surf, "cond", 18, "Click an upgrade (or 1-4) to buy  ·  H switches the horn  ·  Enter to start",
+        gfx.blit_text(surf, "cond", 18, "Click an upgrade (or 1-5) to buy  ·  H switches the horn  ·  Enter to start",
                       HINT, (gfx.W / 2, s(560)), "center")
         pressed = pygame.mouse.get_pressed()[0]
         self.back_btn.draw(surf, mouse, pressed)
