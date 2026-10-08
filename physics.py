@@ -54,6 +54,7 @@ class Vehicle:
         self.inv_i = 1.0 / self.INERTIA
         self.hull_contact = False
         self.head_hit = False
+        self.touched = {}           # obstacle index -> contact normal, collected until the game reads it
         self.head_clearance = 9.0
         self.engine_on = True
         self.boosting = False
@@ -74,9 +75,10 @@ class Vehicle:
         return self.vx * math.cos(self.angle) + self.vy * math.sin(self.angle)
 
     # ------------------------------------------------------------------ step
-    def step(self, dt, gas, brake, boost, terrain, gravity, grip_scale, drag=0.0, water=0.0):
+    def step(self, dt, gas, brake, boost, terrain, gravity, grip_scale, drag=0.0, water=0.0, shapes=()):
         """drag: mud, deep snow or sand on the road here (slows rolling wheels and the vehicle).
-        water: extra resistance underwater (every move pushes through water, spinning slows down too)."""
+        water: extra resistance underwater (every move pushes through water, spinning slows down too).
+        shapes: obstacles nearby (terrain.thing_shapes); solid ones push back, every touch is recorded."""
         st = self.stats
         c, s = math.cos(self.angle), math.sin(self.angle)
         dnx, dny = s, -c          # chassis "down"
@@ -197,6 +199,47 @@ class Vehicle:
             fy += Fy
             tq += rx * Fy - ry * Fx
             hull_contact = True
+
+        # Obstacles: parked cars and crate walls push back (you can drive on a car roof), all touches are recorded.
+        for shape in shapes:
+            solid = shape[-1]
+            for w in self.wheels:
+                hit = _push(shape, w.x, w.y, w.r)
+                if not hit:
+                    continue
+                nx, ny, pen = hit
+                self.touched.setdefault(shape[-2], (nx, ny))
+                if not solid:
+                    continue
+                vn = w.vx * nx + w.vy * ny
+                fn = GROUND_K * pen - GROUND_C * vn
+                if fn > 0:
+                    w.fx += fn * nx
+                    w.fy += fn * ny
+                    if not w.contact or fn > w.load:
+                        w.contact, w.nx, w.ny, w.load = True, nx, ny, fn
+            for lx, ly in self.HULL:
+                rx, ry = lx * c - ly * s, lx * s + ly * c
+                hit = _push(shape, self.x + rx, self.y + ry, 0.0)
+                if not hit:
+                    continue
+                nx, ny, pen = hit
+                self.touched.setdefault(shape[-2], (nx, ny))
+                if not solid:
+                    continue
+                pvx, pvy = self.vx - self.omega * ry, self.vy + self.omega * rx
+                vn = pvx * nx + pvy * ny
+                fn = HULL_K * pen - HULL_C * vn
+                if fn <= 0:
+                    continue
+                tx, ty = ny, -nx
+                vt = pvx * tx + pvy * ty
+                ft = -max(-HULL_MU * fn, min(HULL_MU * fn, HULL_FRICTION * vt))
+                Fx, Fy = nx * fn + tx * ft, ny * fn + ty * ft
+                fx += Fx
+                fy += Fy
+                tq += rx * Fy - ry * Fx
+                hull_contact = True
         self.hull_contact = hull_contact
 
         # The driver's head: hitting the ground or a tunnel roof ends the run.
@@ -205,6 +248,12 @@ class Vehicle:
         hit = terrain.rock(hx, hy, self.HEAD_R)
         if hit:
             clearance = min(clearance, -hit[2])
+        for shape in shapes:
+            hit = _push(shape, hx, hy, self.HEAD_R)
+            if hit:
+                self.touched.setdefault(shape[-2], (hit[0], hit[1]))
+                if shape[-1]:
+                    clearance = min(clearance, -hit[2])
         self.head_clearance = clearance
         if clearance < 0:
             self.head_hit = True
@@ -266,6 +315,31 @@ class Vehicle:
         else:
             target = min(1.0, abs(spin) / st["max_spin"]) * 0.85 + (0.15 if driving else 0.0)
         self.rpm += (min(1.0, target) - self.rpm) * min(1.0, dt * 8)
+
+
+def _push(shape, px, py, r):
+    """Push-out of a circle (radius r, 0 for a point) from a box or ball: (nx, ny, depth) or None."""
+    if shape[0] == "ball":
+        _, cx, cy, rad = shape[:4]
+        dx, dy = px - cx, py - cy
+        d = math.hypot(dx, dy)
+        if d >= rad + r or d < 1e-9:
+            return None
+        return dx / d, dy / d, rad + r - d
+    _, x0, y0, x1, y1 = shape[:5]
+    if px < x0 - r or px > x1 + r or py < y0 - r or py > y1 + r:
+        return None
+    qx, qy = min(max(px, x0), x1), min(max(py, y0), y1)
+    dx, dy = px - qx, py - qy
+    d2 = dx * dx + dy * dy
+    if d2 > 1e-12:
+        if d2 >= r * r:
+            return None
+        d = math.sqrt(d2)
+        return dx / d, dy / d, r - d
+    pen, nx, ny = min(((px - x0 + r, -1.0, 0.0), (x1 - px + r, 1.0, 0.0), (py - y0 + r, 0.0, -1.0),
+                       (y1 - py + r, 0.0, 1.0)))
+    return nx, ny, pen
 
 
 def rest_wheel_offsets(spec, stats):

@@ -212,6 +212,7 @@ class HomeMenu:
         cam.x -= gfx.W * 0.04 / cam.ppm             # car in the middle, between the logo and PLAY
         lights = darkness > 0.22 or run.terrain.feature_at(run.car.x) == "tunnel"
         view = CarView(run.car, run.driver, run.wobble, lights)
+        self.world.clock, self.world.broken = run.time, run.broken
         self.world.draw(surf, cam, [view], run.particles, now, dt, 0, darkness, sunset)
         surf.blit(self.shade, (0, 0))
         top_bar(surf, app, "")

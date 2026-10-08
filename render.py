@@ -13,7 +13,7 @@ import sprites
 import vehicle_art
 from config import BASE_PPM, season_at, vehicle_stats
 from physics import rest_wheel_offsets
-from terrain import RES, START
+from terrain import CAR_BOXES, RES, START, crusher_bottom, traffic_pos, wrecker_ball
 
 
 QUALITY = "high"     # "low" skips pebbles and roadside props
@@ -615,6 +615,8 @@ class WorldRenderer:
         self.glow = sprites.soft_puff(gfx.s(60), (255, 214, 120))
         self.lighting = lighting.Lighting()
         self._lamps = []
+        self.clock = None               # run time that moves the obstacles (None: the app clock)
+        self.broken = set()             # crate walls already smashed
 
     # -------------------------------------------------------------- terrain
     def draw_terrain(self, surf, cam, now):
@@ -655,16 +657,25 @@ class WorldRenderer:
                 if level is not None:
                     self._draw_water(surf, cam, a, b, level, now)
                 self._draw_bridge(surf, cam, a, b)
+        for a, b, risers in t.steps:
+            if b > x0 and a < x1:
+                self._draw_steps(surf, cam, risers)
         for a, b in t.tunnels:
             if b > x0 - 2 and a < x1 + 2:
-                self._draw_tunnel(surf, cam, a, b, now)
+                if t.cave_at(a):
+                    self._draw_cave(surf, cam, a, b, now)
+                else:
+                    self._draw_tunnel(surf, cam, a, b, now)
         for a, b, level in t.pits:
             if b > x0 and a < x1:
-                self._draw_water(surf, cam, a - 0.3, b + 0.3, level, now)
+                if st.get("lava"):
+                    self._draw_water(surf, cam, a - 0.3, b + 0.3, level, now)
+                else:
+                    self._draw_gap(surf, cam, a, b)
         if st["key"] == "city":
             dash = max(2, int(gfx.s(3)))
             for i in range(i0 - i0 % 12, i1 - 6, 12):
-                if t.feature_at(START + i * RES) == "bridge":
+                if t.feature_at(START + i * RES) in ("bridge", "tunnel", "pit", "cars", "traffic"):
                     continue
                 p0 = cam.to_screen(START + i * RES, t.v[i] - st["top_depth"] * 0.45)
                 p1 = cam.to_screen(START + (i + 6) * RES, t.v[i + 6] - st["top_depth"] * 0.45)
@@ -881,6 +892,242 @@ class WorldRenderer:
             pygame.draw.rect(surf, mortar, key_r, border_radius=int(0.06 * ppm))
             pygame.draw.rect(surf, gfx.shade(stone, 1.1), key_r.inflate(-4, -4), border_radius=int(0.05 * ppm))
 
+    def _draw_steps(self, surf, cam, risers):
+        """Bare rock on the face of every ledge."""
+        t, ppm = self.terrain, cam.ppm
+        stone = gfx.mix(self.stage["ground"], (128, 124, 120), 0.6)
+        for p0, p1 in risers:
+            top = self._span_points(cam, p0 - 0.15, p1 + 0.2, t.v, 0.02)
+            low = self._span_points(cam, p0 - 0.15, p1 + 0.2, t.v, -0.55)
+            pygame.draw.polygon(surf, gfx.shade(stone, 0.75), top + low[::-1])
+            pygame.draw.lines(surf, gfx.shade(stone, 1.25), False, top, max(2, int(0.06 * ppm)))
+            mid = top[len(top) // 2]
+            pygame.draw.line(surf, gfx.shade(stone, 0.55), (mid[0] - 0.1 * ppm, mid[1] + 0.12 * ppm),
+                             (mid[0] + 0.05 * ppm, mid[1] + 0.4 * ppm), max(1, int(0.04 * ppm)))
+
+    def _draw_gap(self, surf, cam, a, b):
+        """A bottomless gap: dark rock walls falling away into black."""
+        t, ppm = self.terrain, cam.ppm
+        ia, ib = int((a - START) / RES), int((b - START) / RES)
+        lip_a, lip_b = t.h[ia], t.h[ib]
+        floor = t.h[ia + 1]
+        wall = gfx.shade(self.stage["ground"], 0.55)
+        # the far wall of the gap, seen through it, topping out a bit below the lower lip
+        top = min(lip_a, lip_b) - 0.5
+        n = max(4, int((b - a) / 0.6))
+        edge = [cam.to_screen(a + (b - a) * j / n, top - 0.35 * _hash(j, int(a))) for j in range(n + 1)]
+        for k, col in ((0.0, wall), (0.3, gfx.shade(wall, 0.6)), (0.6, gfx.shade(wall, 0.3))):
+            y = top + (floor - top) * k
+            pts = edge if k == 0 else [cam.to_screen(a, y), cam.to_screen(b, y)]
+            pygame.draw.polygon(surf, col, pts + [cam.to_screen(b, floor - 2), cam.to_screen(a, floor - 2)])
+        pygame.draw.lines(surf, gfx.shade(wall, 1.3), False, edge, max(1, int(0.04 * ppm)))
+        lw = max(2, int(0.07 * ppm))
+        for x, y, side in ((a, lip_a, 1), (b, lip_b, -1)):       # jagged rock edges
+            pts = [cam.to_screen(x + side * 0.12 * ((j % 2) + 0.3), y - j * 0.8) for j in range(10)]
+            pygame.draw.lines(surf, gfx.shade(wall, 1.5), False, pts, lw)
+
+    def _draw_cave(self, surf, cam, a, b, now):
+        """A long dark cave: rough walls, stalactites, stalagmites and glowing crystals."""
+        t, st, ppm = self.terrain, self.stage, cam.ppm
+        x0, x1 = cam.view(1.5)
+        a_, b_ = max(a, x0), min(b, x1)
+        if b_ <= a_:
+            return
+        cave = gfx.shade(st["cave"], 0.8)
+        rock = gfx.mix(st["cave"], (150, 140, 130), 0.35)
+        floor = self._span_points(cam, a_, b_, t.h)
+        roof = self._span_points(cam, a_, b_, t.c)
+        if len(floor) < 2:
+            return
+        pygame.draw.polygon(surf, cave, floor + roof[::-1])
+        i0, i1 = int((a_ - START) / RES), int((b_ - START) / RES)
+        for i in range(i0 - i0 % 6, i1, 6):                      # blotchy back wall
+            if _hash(i, 31) < 0.45:
+                continue
+            x = START + i * RES
+            fl, rf = t.h[i], t.c[i]
+            y = fl + (rf - fl) * (0.25 + 0.55 * _hash(i, 32))
+            r = (0.35 + 0.7 * _hash(i, 33)) * ppm
+            pygame.draw.ellipse(surf, gfx.shade(cave, 0.82), (*cam.to_screen(x, y), r * 1.8, r))
+        tint = (255, 140, 40) if st.get("lava") else (120, 220, 255) if st["key"] in ("arctic", "ocean") else \
+            (90, 255, 160) if st["key"] == "jungle" else (200, 120, 255)
+        for i in range(i0 - i0 % 10, i1, 10):
+            x = START + i * RES
+            roll = _hash(i, 34)
+            if roll < 0.4:                                       # stalagmite at the back
+                hgt = (0.4 + 0.8 * _hash(i, 35)) * ppm
+                base = cam.to_screen(x, t.h[i] + 0.05)
+                w = hgt * 0.35
+                pygame.draw.polygon(surf, gfx.shade(rock, 0.7), [(base[0] - w, base[1]), (base[0] + w, base[1]),
+                                                                 (base[0] + w * 0.1, base[1] - hgt)])
+            elif roll > 0.86:                                    # a glowing crystal cluster
+                up = _hash(i, 36) < 0.5
+                y = t.c[i] - 0.35 if up else t.h[i] + 0.25
+                cx, cy = cam.to_screen(x, y)
+                k = (0.8 + 0.2 * math.sin(now * 2.5 + i)) * ppm
+                for dx, size in ((-0.3, 0.38), (0.0, 0.6), (0.26, 0.32)):
+                    tip = -1 if not up else 1
+                    pygame.draw.polygon(surf, tint, [(cx + (dx - 0.11) * k, cy), (cx + (dx + 0.11) * k, cy),
+                                                     (cx + dx * k, cy + tip * size * k)])
+                pygame.draw.circle(surf, (255, 255, 255), (cx, cy), max(1, 0.05 * ppm))
+                self._lamps.append((cx, cy))
+        spikes = t.spikes
+        lw = max(1, int(0.04 * ppm))
+        for k in range(bisect.bisect_left(t.spike_x, a_ - 2), bisect.bisect_right(t.spike_x, b_ + 2)):
+            x, base, tip, half = spikes[k]
+            pts = [cam.to_screen(x - half, base + 0.1), cam.to_screen(x + half, base + 0.1), cam.to_screen(x, tip)]
+            pygame.draw.polygon(surf, rock, pts)
+            pygame.draw.line(surf, gfx.shade(rock, 1.3), pts[0], pts[2], lw)
+            pygame.draw.line(surf, gfx.shade(rock, 0.7), pts[1], pts[2], lw)
+        pygame.draw.lines(surf, gfx.shade(cave, 0.6), False, roof, max(2, int(0.12 * ppm)))
+        pygame.draw.lines(surf, gfx.shade(rock, 0.9), False, floor, max(3, int(0.16 * ppm)))
+        pygame.draw.lines(surf, gfx.shade(rock, 1.25), False, [(x, y + gfx.s(1)) for x, y in floor],
+                          max(1, int(0.05 * ppm)))
+        for x, side in ((a, 1), (b, -1)):                        # a frame of rocks around each mouth
+            if not x0 - 3 < x < x1 + 3:
+                continue
+            i = int((x - START) / RES)
+            fl, rf = t.h[i], t.c[i]
+            n = max(3, int((rf - fl + 0.9) / 0.75))
+            stone = gfx.mix(st["ground"], (140, 136, 130), 0.55)
+            for j in range(n + 1):
+                y = fl + (rf + 0.9 - fl) * j / n
+                r = (0.26 + 0.24 * _hash(i, j, 7)) * ppm
+                c = cam.to_screen(x + side * (0.05 + 0.25 * _hash(i, j, 8)), y)
+                pygame.draw.circle(surf, gfx.shade(stone, 0.55), (c[0], c[1] + r * 0.12), r)
+                pygame.draw.circle(surf, gfx.shade(stone, 0.8 + 0.2 * _hash(i, j, 9)), c, r * 0.9)
+                pygame.draw.circle(surf, gfx.shade(stone, 1.15), (c[0] - r * 0.3, c[1] - r * 0.3), r * 0.3)
+
+    # ------------------------------------------------------------ obstacles
+    MATERIAL = {"city": ((168, 72, 52), (210, 200, 186), "brick"), "arctic": ((176, 222, 246), (236, 248, 255), "ice"),
+                "seasons": ((176, 120, 64), (110, 72, 38), "crate"), "moon": ((150, 146, 160), (96, 94, 108), "stone"),
+                "mars": ((176, 100, 70), (110, 60, 40), "stone"), "volcano": ((96, 84, 84), (50, 42, 44), "stone")}
+
+    def draw_things(self, surf, cam, t):
+        terr, ppm = self.terrain, cam.ppm
+        x0, x1 = cam.view(2.0)
+        bucket = int(ppm / 2) * 2
+        for i in terr.thing_range(x0, x1):
+            th = terr.things[i]
+            kind = th["kind"]
+            if kind == "car":
+                img = self._sprite("car", th["variant"], bucket, th["flip"])
+                surf.blit(img, img.get_rect(midbottom=cam.to_screen(th["x"], th["y"] - 0.04)))
+            elif kind == "traffic":
+                x, right = traffic_pos(th, t)
+                img = self._sprite("car", th["variant"], bucket, not right)
+                bounce = 0.03 * math.sin(t * 17 + i)
+                surf.blit(img, img.get_rect(midbottom=cam.to_screen(x, terr.height(x) - 0.04 + bounce)))
+                hx = x + (1.8 if right else -1.8)
+                self._lamps.append(cam.to_screen(hx, terr.height(x) + 0.6))
+                if int(t * 3) % 2:                               # hazard flashers
+                    pygame.draw.circle(surf, (255, 170, 30), cam.to_screen(x + (-1.8 if right else 1.8),
+                                                                           terr.height(x) + 0.62), 0.09 * ppm)
+            elif kind == "crates" and i not in self.broken:
+                self._draw_crates(surf, cam, th)
+            elif kind == "crusher":
+                self._draw_crusher(surf, cam, th, t)
+            elif kind == "wrecker":
+                self._draw_wrecker(surf, cam, th, t)
+
+    def _draw_crates(self, surf, cam, th):
+        ppm = cam.ppm
+        col, line, style = self.MATERIAL.get(self.stage["key"], ((176, 120, 64), (110, 72, 38), "crate"))
+        cols = max(1, round(th["w"] / 0.9))
+        rows = 3
+        cw, rh = th["w"] / cols, th["hgt"] / rows
+        lw = max(1, int(0.05 * ppm))
+        for r in range(rows):
+            for c in range(cols):
+                x0 = th["x"] - th["w"] / 2 + c * cw
+                y0 = th["y"] + r * rh
+                tl = cam.to_screen(x0, y0 + rh)
+                rect = pygame.Rect(tl[0], tl[1], cw * ppm + 1, rh * ppm + 1)
+                shade = 0.9 + 0.2 * _hash(r, c, int(th["x"]))
+                pygame.draw.rect(surf, gfx.shade(col, shade), rect)
+                if style == "crate":
+                    pygame.draw.rect(surf, line, rect, lw * 2)
+                    pygame.draw.line(surf, line, rect.topleft, rect.bottomright, lw * 2)
+                    pygame.draw.line(surf, gfx.shade(col, 1.2), (rect.x + lw * 2, rect.y + lw * 2),
+                                     (rect.right - lw * 2, rect.y + lw * 2), lw)
+                elif style == "brick":
+                    for k in range(4):
+                        y = rect.y + rect.h * k / 4
+                        pygame.draw.line(surf, line, (rect.x, y), (rect.right, y), lw)
+                        off = rect.w / 2 if k % 2 else 0
+                        for bx in (rect.x + off, rect.x + off + rect.w / 2):
+                            if rect.x < bx < rect.right:
+                                pygame.draw.line(surf, line, (bx, y), (bx, y + rect.h / 4), lw)
+                    pygame.draw.rect(surf, line, rect, lw)
+                elif style == "ice":
+                    pygame.draw.rect(surf, line, rect, lw)
+                    pygame.draw.line(surf, (255, 255, 255), (rect.x + rect.w * 0.2, rect.y + rect.h * 0.2),
+                                     (rect.x + rect.w * 0.45, rect.y + rect.h * 0.15), lw * 2)
+                else:
+                    pygame.draw.rect(surf, line, rect, lw * 2, border_radius=int(0.12 * ppm))
+        # a warning sign in front: smash it
+        sx, sy = cam.to_screen(th["x"] - th["w"] / 2 - 5.0, th["y"])
+        pygame.draw.line(surf, (90, 90, 96), (sx, sy), (sx, sy - 1.3 * ppm), max(2, int(0.08 * ppm)))
+        pts = [(sx, sy - 1.95 * ppm), (sx + 0.42 * ppm, sy - 1.3 * ppm), (sx - 0.42 * ppm, sy - 1.3 * ppm)]
+        pygame.draw.polygon(surf, (250, 200, 30), pts)
+        pygame.draw.polygon(surf, (30, 30, 34), pts, lw)
+        gfx.blit_text(surf, "cond", max(8, int(0.34 * ppm / gfx.U)), "!", (30, 30, 34), (sx, sy - 1.5 * ppm), "center")
+
+    def _draw_crusher(self, surf, cam, th, t):
+        ppm = cam.ppm
+        bottom = crusher_bottom(th, t)
+        top_y = bottom + 1.4
+        x, w = th["x"], th["w"]
+        # the piston from the roof
+        a, b = cam.to_screen(x, th["top"] + 0.4), cam.to_screen(x, top_y)
+        pygame.draw.line(surf, (60, 62, 68), a, b, max(3, int(0.36 * ppm)))
+        pygame.draw.line(surf, (150, 154, 162), (a[0] - 0.06 * ppm, a[1]), (b[0] - 0.06 * ppm, b[1]), max(1, int(0.08 * ppm)))
+        tl = cam.to_screen(x - w / 2, top_y)
+        rect = pygame.Rect(tl[0], tl[1], w * ppm, 1.4 * ppm)
+        pygame.draw.rect(surf, (82, 86, 96), rect, border_radius=int(0.08 * ppm))
+        pygame.draw.rect(surf, (120, 126, 138), rect.inflate(-0.16 * ppm, -0.16 * ppm), border_radius=int(0.06 * ppm))
+        band = pygame.Rect(rect.x, rect.bottom - 0.32 * ppm, rect.w, 0.32 * ppm)
+        pygame.draw.rect(surf, (250, 200, 30), band)
+        k = 0
+        while k * 0.3 * ppm < rect.w + band.h:                     # hazard stripes
+            x0 = band.x + k * 0.3 * ppm
+            pts = [(x0, band.bottom), (x0 + 0.15 * ppm, band.bottom), (x0 + 0.15 * ppm + band.h, band.y),
+                   (x0 + band.h, band.y)]
+            pts = [(min(max(px, band.x), band.right), py) for px, py in pts]
+            pygame.draw.polygon(surf, (30, 30, 34), pts)
+            k += 1
+        for bx in (rect.x + 0.2 * ppm, rect.right - 0.2 * ppm):
+            pygame.draw.circle(surf, (60, 62, 70), (bx, rect.y + 0.25 * ppm), 0.07 * ppm)
+        self._lamps.append((rect.centerx, rect.bottom))
+
+    def _draw_wrecker(self, surf, cam, th, t):
+        ppm = cam.ppm
+        steel, dark = (230, 170, 40), (150, 104, 20)
+        base = cam.to_screen(th["x"] - 3.0, th["y"] - 0.1)
+        mast = cam.to_screen(th["x"] - 3.0, th["py"] + 0.7)
+        tip = cam.to_screen(th["x"] + 0.6, th["py"] + 0.7)
+        pygame.draw.line(surf, dark, base, mast, max(3, int(0.4 * ppm)))
+        pygame.draw.line(surf, steel, base, mast, max(2, int(0.26 * ppm)))
+        pygame.draw.line(surf, dark, mast, tip, max(3, int(0.34 * ppm)))
+        pygame.draw.line(surf, steel, mast, tip, max(2, int(0.2 * ppm)))
+        for k in range(1, 8):                                   # lattice
+            p = (base[0], base[1] + (mast[1] - base[1]) * k / 8)
+            q = (base[0] + 0.0, base[1] + (mast[1] - base[1]) * (k + 0.5) / 8)
+            pygame.draw.line(surf, dark, (p[0] - 0.13 * ppm, p[1]), (q[0] + 0.13 * ppm, q[1]), max(1, int(0.05 * ppm)))
+        pivot = cam.to_screen(th["x"], th["py"])
+        pygame.draw.line(surf, dark, (pivot[0], tip[1]), pivot, max(2, int(0.1 * ppm)))
+        bx, by = wrecker_ball(th, t)
+        ball = cam.to_screen(bx, by)
+        pygame.draw.line(surf, (60, 60, 66), pivot, ball, max(2, int(0.1 * ppm)))
+        n = 12
+        for k in range(n):                                       # chain links
+            p = (pivot[0] + (ball[0] - pivot[0]) * k / n, pivot[1] + (ball[1] - pivot[1]) * k / n)
+            pygame.draw.circle(surf, (110, 110, 118), p, max(2, 0.1 * ppm), max(1, int(0.04 * ppm)))
+        r = th["r"] * ppm
+        pygame.draw.circle(surf, (40, 40, 46), ball, r)
+        pygame.draw.circle(surf, (70, 70, 78), (ball[0] - r * 0.12, ball[1] - r * 0.12), r * 0.82)
+        pygame.draw.circle(surf, (120, 120, 130), (ball[0] - r * 0.35, ball[1] - r * 0.38), r * 0.22)
+
     def _draw_pebbles(self, surf, cam, x0, x1):
         if QUALITY == "low":
             return
@@ -1007,6 +1254,9 @@ class WorldRenderer:
             seen.add((kind, i % 3))
         for _, kind, _ in self.terrain.landmarks:
             seen.add((kind, 0))
+        for th in self.terrain.things:
+            if th["kind"] in ("car", "traffic"):
+                seen.add(("car", th["variant"]))
         for kind, variant in seen:
             self._master(kind, variant)
 
@@ -1118,6 +1368,7 @@ class WorldRenderer:
         self.draw_landmarks(surf, cam, now, darkness)
         self.draw_props(surf, cam)
         self.draw_terrain(surf, cam, now)
+        self.draw_things(surf, cam, now if self.clock is None else self.clock)
         self.draw_markers(surf, cam, best)
         if race_m:
             self.draw_finish(surf, cam, race_m)
@@ -1135,6 +1386,9 @@ class WorldRenderer:
             else:
                 self.draw_vehicle(surf, cam, v.car, v.wobble, now, v.driver)
         particles.draw(surf, cam, back=False)
+        cave = self.terrain.cave_at(cam.x, 2.0)
+        if cave:                                                  # caves are dark, day or night
+            darkness = max(darkness, 0.8 * min(1.0, (cam.x - cave[0] + 2) / 12, (cave[1] + 2 - cam.x) / 12))
         if darkness > 0.01:
             cones, glows, tails = [], [], []
             for v in views:

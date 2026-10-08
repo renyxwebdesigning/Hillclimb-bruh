@@ -700,6 +700,7 @@ class App:
             views.insert(0, CarView(self.ghost.car, self.ghost.driver, label=f"BEST {self.ghost.distance} m",
                                     color=(200, 220, 255), ghost=True))
         views.append(CarView(run.car, run.driver, run.wobble, run.lights_on, bubble=run.bubble))
+        self.world.clock, self.world.broken = run.time, run.broken
         self.world.draw(self.screen, run.cam, views, run.particles, self.now, 0 if frozen else dt, run.best,
                         darkness, sunset, run.race_m)
         fs_icon = self.fs_icon[self.is_fullscreen()] if self.fs_available() else None

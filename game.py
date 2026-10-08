@@ -5,6 +5,7 @@ import random
 from config import FLIP_BONUS, GRAVITY_SCALE, NECK_FLIP_BONUS, PHYS_DT, season_at, vehicle_stats
 from physics import Vehicle
 from render import Camera, Particles
+from terrain import thing_shapes
 
 START_X = 2.0
 
@@ -19,6 +20,9 @@ class Run:
         self.flips = 0
         self.max_air = 0.0
         self.pits_cleared = 0
+        self.broken = set()             # crate walls smashed this run
+        self._slow_note = None
+        self._skip_to = None            # online: where to respawn after an obstacle got you
         self.night_m = 0.0
         self.is_night = False
         self._next_pit = 0
@@ -104,10 +108,11 @@ class Run:
                                  "oil": "OIL!", "seaweed": "SEAWEED!"}[zone], (230, 230, 240))
         self._zone = zone
         self._acc += dt
+        shapes = self._shapes(car, dt) if alive else ()
         steps = 0
         while self._acc >= PHYS_DT and steps < 50:
             car.step(PHYS_DT, g, b, self.boosting, self.terrain, st["gravity"] * GRAVITY_SCALE, grip, drag,
-                     st.get("water_drag", 0.0))
+                     st.get("water_drag", 0.0), shapes)
             self._acc -= PHYS_DT
             steps += 1
             if not car.grounded:
@@ -118,6 +123,9 @@ class Run:
             self._respawn()                 # physics went wild: put the vehicle back on the road
             car = self.car
 
+        if self.state == "drive" and car.touched and self.respawn_t is None:
+            self._hit_things(car)
+        car.touched.clear()
         if self.state == "drive":
             if car.head_hit and self.respawn_t is None:
                 self._crash()
@@ -145,7 +153,7 @@ class Run:
                 self.night_m += car.x - self._last_x
             pits = self.terrain.pits
             while self._next_pit < len(pits) and car.x > pits[self._next_pit][1] + 1.0:
-                if self._next_pit < len(pits) and pits[self._next_pit][1] < car.x and self.respawn_t is None:
+                if pits[self._next_pit][1] < car.x and self.respawn_t is None and st.get("lava"):
                     self.pits_cleared += 1
                 self._next_pit += 1
             self._live_t -= dt
@@ -195,15 +203,79 @@ class Run:
         if pit and min(w.y - w.r for w in self.car.wheels) < pit[2] + 0.1:
             self.audio.play("crash")
             line = self._swear()
-            for _ in range(24):
-                self.particles.add("spark", self.car.x, pit[2], random.uniform(-3, 3), random.uniform(2, 7), 0.8,
-                                   0.09, random.choice(((255, 200, 60), (255, 110, 20), (255, 60, 20))), grav=8)
+            lava = self.stage.get("lava")
+            if lava:
+                for _ in range(24):
+                    self.particles.add("spark", self.car.x, pit[2], random.uniform(-3, 3), random.uniform(2, 7), 0.8,
+                                       0.09, random.choice(((255, 200, 60), (255, 110, 20), (255, 60, 20))), grav=8)
             if self.online:
                 self.respawn_t = 1.2
-                self.hud.notice("BURNED!", (255, 120, 40))
+                self.hud.notice("BURNED!" if lava else "FELL!", (255, 120, 40))
                 self.outbox.append({"kind": "crash", "line": line})
             else:
-                self.finish("BURNED IN LAVA!")
+                self.finish("BURNED IN LAVA!" if lava else "FELL INTO A GAP!")
+
+    # ------------------------------------------------------------ obstacles
+    def _shapes(self, car, dt):
+        """Collision shapes of the obstacles around the car right now; smashes crate walls hit fast enough."""
+        t = self.terrain
+        out = []
+        for i in t.thing_range(car.x - 6, car.x + 6):
+            th = t.things[i]
+            if th["kind"] == "crates":
+                if i in self.broken:
+                    continue
+                speed = car.forward_speed
+                need = th["need"] - (2.0 if self.boosting else 0.0)
+                gap = th["x"] - th["w"] / 2 - (car.x + 2.7)
+                if speed >= need and gap < speed * dt + 0.4 and car.x < th["x"]:
+                    self._smash(i, th)
+                    continue
+            out.extend(thing_shapes(th, self.time, i, t))
+        return out
+
+    def _smash(self, i, th):
+        self.broken.add(i)
+        self.audio.play("crash")
+        self.hud.notice("SMASH!", (255, 200, 60))
+        car = self.car
+        car.vx *= 0.8
+        for w in car.wheels:
+            w.vx *= 0.8
+        col = {"city": (170, 74, 54), "arctic": (190, 230, 250)}.get(self.stage["key"], (176, 120, 64))
+        for _ in range(26):
+            self.particles.add("chunk", th["x"] + random.uniform(-0.4, 0.4), th["y"] + random.uniform(0.2, th["hgt"]),
+                               car.vx * random.uniform(0.3, 0.9) + random.uniform(-1, 2), random.uniform(1, 6), 1.2,
+                               random.uniform(0.1, 0.24), col, back=False)
+
+    def _hit_things(self, car):
+        t = self.terrain
+        for i, (nx, ny) in car.touched.items():
+            th = t.things[i]
+            kind = th["kind"]
+            if kind == "crates":
+                if self._slow_note != i:
+                    self._slow_note = i
+                    self.hud.notice("TOO SLOW! BACK UP AND BOOST", (255, 220, 120))
+                continue
+            if kind == "car" and abs(nx) < 0.75:
+                continue                                    # on the roof: fine
+            reason, short = {"car": ("CRASHED INTO A CAR!", "CRASH!"), "traffic": ("HIT BY A CAR!", "CRASH!"),
+                             "crusher": ("SQUASHED!", "SQUASHED!"), "wrecker": ("SMASHED!", "SMASHED!")}[kind]
+            end = next((b for a, b, _ in t.blocks if a - 2 <= th["x"] <= b + 2), th["x"] + 3)
+            self._skip_to = end + 3.0
+            self.audio.play("crash")
+            line = self._swear()
+            for _ in range(18):
+                self.particles.add("chunk", car.x, car.y + 0.5, random.uniform(-3, 3), random.uniform(1, 5), 0.9,
+                                   random.uniform(0.06, 0.13), (90, 90, 96))
+            if self.online:
+                self.respawn_t = 1.4
+                self.hud.notice(short, (255, 90, 70))
+                self.outbox.append({"kind": "crash", "line": line})
+            else:
+                self.finish(reason)
+            return
 
     def _check_flipped(self, dt):
         """On its roof and not moving (no fuel to run out): end the run instead of leaving the player stuck."""
@@ -227,7 +299,9 @@ class Run:
             self.car.x = START_X + self.distance
         x = max(START_X, self.car.x - 2.0)
         pit = self.terrain.pit_at(self.car.x) or self.terrain.pit_at(self.car.x + 3)
-        if pit:
+        if self._skip_to is not None:
+            x, self._skip_to = self._skip_to, None
+        elif pit:
             x = pit[1] + 3.0
         elif self.terrain.feature_at(x, 2.0) == "tunnel":
             x = self.car.x

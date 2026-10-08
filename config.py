@@ -82,7 +82,7 @@ STAGES += [
         ground=(120, 112, 108), pebble=(104, 96, 92), pebble_hi=(150, 142, 136),
         top=(70, 72, 78), top_hi=(110, 112, 120), top_lo=(46, 46, 52),
         top_depth=0.36, water=(70, 120, 170), cave=(40, 40, 46),
-        octaves=[(80, 7.0), (32, 3.6), (12, 0.6), (5, 0.08)],
+        octaves=[(80, 9.5), (32, 4.8), (12, 0.8), (5, 0.08)],
         decor="city", props=("lamp", "lamp", "car", "hydrant", "cone", "bin", "sign", "bench", "trafficlight", "car"),
         landmarks=("billboard",), cycle=True,
         obstacles=("oil", "speedbump", "speedbump"),
