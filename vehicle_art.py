@@ -540,6 +540,91 @@ def _shark(surf, k, ppm, stage=2):
     pygame.draw.circle(surf, (236, 190, 150), Q(*hand), 0.05 * sc)
 
 
+def _story_car(surf, k, ppm, d):
+    """The story-mode cars, all drawn from their outline (story.CAR_SHAPES) plus a few signature details."""
+    P, sc = _mapper(surf, ppm, k)
+    col = d["color"]
+    dark, hi = gfx.shade(col, 0.68), gfx.shade(col, 1.25) if sum(col) < 600 else (255, 255, 255)
+    pts = d["pts"]
+    if d.get("smooth", True):
+        from drivers import spline
+        pts = spline(pts, steps=3)
+    ex = d.get("extras", ())
+    xs = [x for x, _ in d["pts"]]
+    x0, x1 = min(xs), max(xs)
+    lw = max(1, int(0.022 * sc))
+    if "wing" in ex:                                            # the factory wing sits behind the body
+        for sx in (x0 + 0.35, x0 + 0.62):
+            pygame.draw.line(surf, BLACK, P(sx, 0.45), P(sx - 0.06, 0.78), max(1, int(0.05 * sc)))
+        _poly(surf, P, sc, [(x0 - 0.08, 0.76), (x0 + 0.85, 0.79), (x0 + 0.82, 0.88), (x0 - 0.06, 0.88)], dark, OUTLINE, 0.015)
+    pygame.draw.polygon(surf, col, [P(*p) for p in pts])
+    # darker sills: the same outline, clipped below the shoulder of the doors
+    clip = surf.get_clip()
+    top = P(0, -0.05)[1]
+    surf.set_clip(pygame.Rect(0, top, surf.get_width(), surf.get_height() - top))
+    pygame.draw.polygon(surf, dark, [P(*p) for p in pts])
+    surf.set_clip(clip)
+    shoulder = max(-0.05, min(y for _, y in d["glass"]) - 0.08)
+    pygame.draw.line(surf, hi, P(x0 + 0.25, shoulder), P(x1 - 0.35, shoulder - 0.06), max(1, int(0.03 * sc)))
+    if "rust" in ex:                                            # rust patches and a grey primer door
+        for cx, cy, r in ((-1.45, 0.05, 0.16), (-1.2, -0.12, 0.1), (1.35, 0.12, 0.13), (0.95, -0.15, 0.08)):
+            pygame.draw.ellipse(surf, (126, 72, 34), pygame.Rect(P(cx - r, cy + r * 0.6), (2 * r * sc, 1.2 * r * sc)))
+        _poly(surf, P, sc, [(-0.5, 0.48), (0.6, 0.48), (0.62, -0.25), (-0.48, -0.25)], (150, 150, 146), None)
+    if "stripes" in ex:                                         # twin racing stripes
+        for dy in (0.16, 0.26):
+            pygame.draw.line(surf, (245, 245, 245), P(x0 + 0.1, dy), P(x1 - 0.1, dy - 0.04), max(2, int(0.06 * sc)))
+    if "livery" in ex:                                          # silver with a blue stripe
+        _poly(surf, P, sc, [(x0 + 0.05, 0.1), (x1 - 0.1, 0.06), (x1 - 0.15, -0.1), (x0 + 0.08, -0.06)], (30, 64, 176), None)
+        t = gfx.font_px("black_i", 0.18 * sc).render("GTR", True, (255, 255, 255))
+        surf.blit(t, t.get_rect(center=P(0.0, 0.02)))
+    if "intake" in ex or "scoopside" in ex:                     # slanted air intake ahead of the rear wheel
+        bx = d["wheels"][0] + 0.5
+        _poly(surf, P, sc, [(bx, 0.16), (bx + 0.42, 0.34), (bx + 0.46, 0.2), (bx + 0.08, 0.06)], (30, 30, 34), None)
+    if "vent" in ex or "gills" in ex:                           # chrome side vent / gills behind the front wheel
+        vx = d["wheels"][1] - 0.62
+        for i in range(5 if "gills" in ex else 2):
+            pygame.draw.line(surf, CHROME_DK, P(vx - i * 0.09, 0.28), P(vx - i * 0.09 - 0.06, 0.02), max(1, int(0.035 * sc)))
+    _arches(surf, P, sc, d["wheels"], -0.04, d["r"] + 0.035)
+    _glass(surf, P, sc, d["glass"], (34, 44, 60, 170))
+    g = d["glass"]
+    mid = (g[0][0] + g[-1][0]) / 2 + 0.1                        # B pillar and door seam
+    pygame.draw.line(surf, col, P(mid, g[0][1]), P(mid, max(y for _, y in g) + 0.02), max(1, int(0.05 * sc)))
+    pygame.draw.line(surf, dark, P(g[-1][0] - 0.02, g[-1][1] - 0.02), P(g[-1][0] - 0.06, -0.24), max(1, int(0.015 * sc)))
+    if "scoop" in ex:                                           # hood scoop
+        _poly(surf, P, sc, [(0.9, 0.52), (1.2, 0.62), (1.45, 0.55), (1.45, 0.5)], dark, OUTLINE, 0.012)
+    if "fuelcap" in ex:
+        pygame.draw.circle(surf, CHROME, P(-1.45, 0.4), 0.07 * sc)
+        pygame.draw.circle(surf, CHROME_DK, P(-1.45, 0.4), 0.07 * sc, max(1, int(0.015 * sc)))
+    if "sidepipe" in ex:                                        # side exits under the door
+        pygame.draw.rect(surf, CHROME, pygame.Rect(P(0.1, -0.2), (0.7 * sc, 0.07 * sc)), border_radius=int(0.03 * sc))
+    pygame.draw.polygon(surf, OUTLINE, [P(*p) for p in pts], lw)
+    # lights: front lamp and tail lamp, a few in a signature shape
+    fy = [y for x, y in d["pts"] if x > x1 - 0.5]
+    ly = (max(fy) + min(fy)) / 2 + 0.05 if fy else 0.2
+    if "frogeye" in ex:
+        pygame.draw.ellipse(surf, (250, 250, 236), pygame.Rect(P(x1 - 0.42, ly + 0.17), (0.3 * sc, 0.2 * sc)))
+    elif "fnose" in ex:
+        _poly(surf, P, sc, [(x1 - 0.85, 0.32), (x1 - 0.35, 0.2), (x1 - 0.4, 0.14), (x1 - 0.85, 0.26)], (250, 250, 236), None)
+    else:
+        _poly(surf, P, sc, [(x1 - 0.42, ly + 0.08), (x1 - 0.06, ly - 0.02), (x1 - 0.06, ly - 0.08), (x1 - 0.42, ly - 0.0)],
+              (250, 250, 236), None)
+    if "kidney" in ex:
+        pygame.draw.rect(surf, (30, 30, 34), pygame.Rect(P(x1 - 0.06, 0.12), (0.06 * sc, 0.16 * sc)))
+    if "roundtail" in ex:
+        for dx in (0.0, 0.0):
+            pygame.draw.circle(surf, (230, 30, 30), P(x0 + 0.06 + dx, 0.32), 0.08 * sc)
+    else:
+        pygame.draw.rect(surf, (220, 28, 28), pygame.Rect(P(x0 - 0.02, 0.42), (0.1 * sc, 0.16 * sc)))
+    if "wedge" in ex:                                           # sharp crease along the wedge
+        pygame.draw.line(surf, dark, P(x0 + 0.3, 0.32), P(x1 - 0.3, 0.12), max(1, int(0.03 * sc)))
+    pygame.draw.circle(surf, CHROME, P(x0 + 0.08, -0.22), 0.045 * sc)                      # tailpipe
+
+
+def _story_body(key):
+    from story import CAR_SHAPES
+    return CAR_SHAPES.get(key)
+
+
 BODIES = {"dirtbike": _dirtbike, "chopper": _chopper, "monster": _monster, "supercar": _supercar,
           "tank": _tank, "police": _police, "hoverboard": _hoverboard, "tesla": _tesla, "mini": _mini, "b2": _b2,
           "excavator": _excavator, "lkw": _lkw, "golf": _golf, "shark": _shark}
@@ -549,6 +634,10 @@ def body(key, ppm, stage=2):
     """stage: only the shark has stages (it grows with its upgrades)."""
     if key == "jeep":
         return car_body(ppm)
+    story_car = _story_body(key)
+    if story_car is not None:
+        size = 2 * 2.75 * ppm
+        return gfx.supersample(size, size, lambda s, k: _story_car(s, k, ppm, story_car))
     size = 2 * EXTENT[key] * ppm
     if key == "shark":
         return gfx.supersample(size, size, lambda s, k: _shark(s, k, ppm, stage))

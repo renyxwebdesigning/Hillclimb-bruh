@@ -27,6 +27,7 @@ BUTTON_STYLES = {
     "red": ((255, 132, 104), (220, 52, 40), (130, 24, 18), WHITE),
     "blue": ((120, 200, 255), (38, 118, 230), (18, 64, 156), WHITE),
     "yellow": ((255, 230, 96), (255, 170, 20), (180, 96, 8), WHITE),
+    "dark": ((76, 78, 88), (34, 36, 42), (12, 12, 16), (255, 204, 48)),        # story mode
 }
 
 
@@ -157,17 +158,24 @@ def round_button(surf, img, center):
     return r
 
 
-def top_bar(surf, app, title):
-    """Coin counter pill on the left, big title in the middle, round icon buttons on the right."""
+def top_bar(surf, app, title, cash=None):
+    """Coin counter pill on the left (story mode: cash in dollars), big title in the middle, icon buttons right."""
     bar = pygame.Rect(0, 0, gfx.W, s(70))
     shade = gfx.vgradient(gfx.W, bar.h, (8, 24, 70, 150), (8, 24, 70, 0)).convert_alpha()
     surf.blit(shade, (0, 0))
-    coins = gfx.text("heavy", 28, gfx.fmt(app.data["coins"]), WHITE, outline=NAVY, width=2)
-    cp = pygame.Rect(s(18), 0, coins.get_width() + app.coin_icon.get_width() + s(44), s(44))
-    cp.centery = bar.centery
-    pill(surf, cp)
-    surf.blit(app.coin_icon, app.coin_icon.get_rect(midleft=(cp.x + s(8), cp.centery)))
-    surf.blit(coins, coins.get_rect(midleft=(cp.x + app.coin_icon.get_width() + s(18), cp.centery)))
+    if cash is None:
+        coins = gfx.text("heavy", 28, gfx.fmt(app.data["coins"]), WHITE, outline=NAVY, width=2)
+        cp = pygame.Rect(s(18), 0, coins.get_width() + app.coin_icon.get_width() + s(44), s(44))
+        cp.centery = bar.centery
+        pill(surf, cp)
+        surf.blit(app.coin_icon, app.coin_icon.get_rect(midleft=(cp.x + s(8), cp.centery)))
+        surf.blit(coins, coins.get_rect(midleft=(cp.x + app.coin_icon.get_width() + s(18), cp.centery)))
+    else:
+        money = gfx.text("heavy", 28, f"$ {gfx.fmt(cash)}", (120, 240, 120), outline=NAVY, width=2)
+        cp = pygame.Rect(s(18), 0, money.get_width() + s(36), s(44))
+        cp.centery = bar.centery
+        pill(surf, cp)
+        surf.blit(money, money.get_rect(center=cp.center))
     if title:
         head = gfx.text("black_i", 36, title, WHITE, outline=NAVY, width=3, shadow=3)
         room = gfx.W - 2 * s(430)              # between the coin pill and the icons on the right
@@ -909,6 +917,11 @@ class Garage:
         self.flash = {}
         self.showcase = None
         self.showcase_key = None
+        self.money_prefix = ""          # "$ " in story mode (no coin icon)
+        self.hint = "Click an upgrade (or 1-5) to buy  ·  H switches the horn  ·  Enter to start"
+
+    def scene_stage(self):
+        return self.app.stage
 
     def handle(self, ev):
         app = self.app
@@ -941,19 +954,44 @@ class Garage:
         app.persist()
         app.audio.play("horn_" + app.data["horn"])
 
+    # hooks: story mode's garage spends dollars on its own cars
+    def _spec(self):
+        return self.app.vehicle
+
+    def _levels(self):
+        return self.app.data["levels"][self.app.data["vehicle"]]
+
+    def _cost(self, u, lv):
+        return upgrade_cost(u, lv)
+
+    def _cash(self):
+        return self.app.data["coins"]
+
+    def _spend(self, amount):
+        self.app.data["coins"] -= amount
+
+    def _title(self):
+        app = self.app
+        best = app.data["best"].get(app.stage["key"], 0)
+        title = f"{app.vehicle['name'].upper()}  ·  {app.stage['name'].upper()}"
+        return title + (f"  ·  BEST {best}m" if best else "")
+
+    def _top_bar(self, surf, title):
+        top_bar(surf, self.app, title)
+
     def buy(self, u):
         app = self.app
-        levels = app.data["levels"][app.data["vehicle"]]
+        levels = self._levels()
         lv = levels[u["key"]]
         if lv >= u["max"]:
             app.audio.play("deny")
             return
-        cost = upgrade_cost(u, lv)
-        if app.data["coins"] < cost:
+        cost = self._cost(u, lv)
+        if self._cash() < cost:
             app.audio.play("deny")
             self.flash[u["key"]] = (app.now, False)
             return
-        app.data["coins"] -= cost
+        self._spend(cost)
         levels[u["key"]] = lv + 1
         app.persist()
         app.audio.play("buy")
@@ -961,26 +999,21 @@ class Garage:
 
     def draw(self, surf, mouse, now):
         app = self.app
-        levels = app.data["levels"][app.data["vehicle"]]
-        key = (app.stage["key"], app.data["vehicle"], app.data["driver"], tuple(sorted(levels.items())))
+        levels, spec = self._levels(), self._spec()
+        key = (self.scene_stage()["key"], spec["key"], app.data["driver"], tuple(sorted(levels.items())))
         if self.showcase_key != key:                  # redrawn after every purchase: the upgrades show on it
-            self.showcase = vehicle_on_scene(app, app.stage, app.vehicle, gfx.W, s(236), 0.8, levels)
+            self.showcase = vehicle_on_scene(app, self.scene_stage(), spec, gfx.W, s(236), 0.8, levels)
             self.showcase_key = key
         surf.blit(self.bg, (0, 0))
         surf.blit(self.showcase, (0, s(64)))
         shade = gfx.vgradient(gfx.W, s(26), (0, 0, 0, 0), (0, 0, 0, 90))
         surf.blit(shade, (0, s(64) + s(236) - s(26)))
-        best = app.data["best"].get(app.stage["key"], 0)
-        title = f"{app.vehicle['name'].upper()}  ·  {app.stage['name'].upper()}"
-        if best:
-            title += f"  ·  BEST {best}m"
-        top_bar(surf, app, title)
-        levels = app.data["levels"][app.data["vehicle"]]
+        self._top_bar(surf, self._title())
         dark = (40, 42, 48)
         for u, r in self.tiles:
             lv = levels[u["key"]]
             maxed = lv >= u["max"]
-            cost = upgrade_cost(u, lv)
+            cost = self._cost(u, lv)
             hover = r.collidepoint(mouse)
             rect = r.move(0, -s(3) if hover and not maxed else 0)
             pygame.draw.rect(surf, (12, 14, 16), rect.move(0, s(5)), border_radius=si(14))
@@ -1001,10 +1034,10 @@ class Garage:
                 pygame.draw.rect(surf, (255, 204, 48), bar, border_radius=si(9))
                 gfx.blit_text(surf, "cond", 20, "MAXED OUT", dark, bar.center, "center")
             else:
-                can = app.data["coins"] >= cost
+                can = self._cash() >= cost
                 pygame.draw.rect(surf, (76, 170, 46) if can else (196, 70, 60), bar, border_radius=si(9))
-                label = gfx.text("cond", 20, f"BUY  {gfx.fmt(cost)}", WHITE)
-                ic = app.coin_icon_small
+                label = gfx.text("cond", 20, f"BUY  {self.money_prefix}{gfx.fmt(cost)}", WHITE)
+                ic = app.coin_icon_small if not self.money_prefix else pygame.Surface((0, 0))
                 x = bar.centerx - (label.get_width() + ic.get_width() + s(6)) / 2
                 surf.blit(ic, ic.get_rect(midleft=(x, bar.centery)))
                 surf.blit(label, label.get_rect(midleft=(x + ic.get_width() + s(6), bar.centery)))
@@ -1014,8 +1047,7 @@ class Garage:
                 a = int(150 * (1 - (now - f[0]) / 0.4))
                 pygame.draw.rect(ov, (120, 230, 80, a) if f[1] else (240, 60, 50, a), ov.get_rect(), border_radius=si(14))
                 surf.blit(ov, rect)
-        gfx.blit_text(surf, "cond", 18, "Click an upgrade (or 1-5) to buy  ·  H switches the horn  ·  Enter to start",
-                      HINT, (gfx.W / 2, s(560)), "center")
+        gfx.blit_text(surf, "cond", 18, self.hint, HINT, (gfx.W / 2, s(560)), "center")
         pressed = pygame.mouse.get_pressed()[0]
         self.back_btn.draw(surf, mouse, pressed)
         self.start_btn.draw(surf, mouse, pressed)
@@ -1090,13 +1122,14 @@ class Results:
 
 
 class PauseMenu:
-    def __init__(self, app, online=None):
+    def __init__(self, app, online=None, story=False):
         self.app = app
         cx, cy = gfx.W / 2, gfx.H / 2
         if online is None:
             self.buttons = [Button("RESUME", (cx, cy - s(10)), (300, 66), "green", key="resume"),
                             Button("RESTART", (cx, cy + s(76)), (300, 66), "gray", key="restart"),
-                            Button("CHANGE RIDE", (cx, cy + s(162)), (300, 66), "gray", key="setup")]
+                            Button("QUIT RACE" if story else "CHANGE RIDE", (cx, cy + s(162)), (300, 66), "gray",
+                                   key="setup")]
         else:
             self.buttons = [Button("RESUME", (cx, cy - s(10)), (300, 66), "green", key="resume")]
             if online.is_host:

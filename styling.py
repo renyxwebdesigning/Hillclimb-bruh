@@ -206,7 +206,7 @@ def spoiler_mount(spec):
 
 def draw_spoiler(surf, P, k, spec, levels):
     """Lip, GT wing or a big wing with endplates on the rear deck, drawn in the vehicle's frame."""
-    if spec["key"] not in SPOILER_CARS:
+    if spec["key"] not in SPOILER_CARS and not (spec.get("story") and not spec.get("has_wing")):
         return
     size = tiers(levels)[2]
     if size == 0:

@@ -37,6 +37,7 @@ def default():
         "daily_done": "",
         "ghosts": True,
         "lang": "en",
+        "story": {},                     # story mode progress, filled in by story.state()
     }
 
 
@@ -73,7 +74,7 @@ def _load():
         return data
     for k in ("coins", "best", "stage", "vehicle", "sound", "music", "driver", "horn", "name", "last_host",
               "player_id", "friends", "volume", "music_track", "graphics", "fullscreen", "stats", "achievements",
-              "trophies", "daily_done", "ghosts", "lang"):
+              "trophies", "daily_done", "ghosts", "lang", "story"):
         if k in stored and type(stored[k]) is type(data[k]):
             data[k] = stored[k]
     levels = stored.get("levels", {})

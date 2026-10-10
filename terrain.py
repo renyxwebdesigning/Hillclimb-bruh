@@ -102,6 +102,8 @@ class Terrain:
                  ("cars", 0.0 if wet else 2.6 if city else 1.6), ("traffic", 0.0 if wet else 2.6 if city else 1.2),
                  ("crates", 2.2), ("wrecker", 1.3), ("boulder", 1.3), ("flames", 1.4), ("spinner", 1.2),
                  ("spikes", 0.0 if wet else 1.3)]
+        if self.stage.get("street"):            # story-mode streets: road features only, so the AI races fairly
+            table = [("bridge", 2.0), ("tunnel", 2.6), ("wall", 1.4), ("steps", 1.2)]
         kinds = [k for k, _ in table]
         odds = np.array([w for _, w in table])
         odds /= odds.sum()

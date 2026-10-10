@@ -34,6 +34,8 @@ import render  # noqa: E402
 import lighting  # noqa: E402
 import save  # noqa: E402
 import sprites  # noqa: E402
+import story  # noqa: E402
+import story_ui  # noqa: E402
 import ui  # noqa: E402
 from audio import Audio  # noqa: E402
 from config import FPS, STAGE_BY_KEY, TITLE, VEHICLE_BY_KEY, WEB  # noqa: E402
@@ -139,14 +141,8 @@ class App:
         self.now = 0.0
         self._terrains = {}
         self._worlds = {}
-        self.screens = {"home": None, "stages": ui.StageSelect(self), "vehicles": ui.VehicleSelect(self),
-                        "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
-                        "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
-        self.screens["home"] = home.HomeMenu(self)
-        self.screens["setup"] = ui.Setup(self)
-        self.screens["settings"] = ui.Settings(self)
-        self.screens["trophies"] = ui.TrophyRoom(self)
-        self.screens["leaderboard"] = ui.Leaderboard(self)
+        self._make_screens()
+        self.story_results = None
         self.recorder = None
         self.ghost = None
         self.state = "home"
@@ -163,6 +159,19 @@ class App:
         self._remote_smoke = 0.0
         self.running = True
         self.audio.music("menu")
+
+    def _make_screens(self):
+        self.screens = {"home": None, "stages": ui.StageSelect(self), "vehicles": ui.VehicleSelect(self),
+                        "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
+                        "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
+        self.screens["home"] = home.HomeMenu(self)
+        self.screens["setup"] = ui.Setup(self)
+        self.screens["settings"] = ui.Settings(self)
+        self.screens["trophies"] = ui.TrophyRoom(self)
+        self.screens["leaderboard"] = ui.Leaderboard(self)
+        self.screens["story"] = story_ui.StoryHub(self)
+        self.screens["city"] = story_ui.CityScreen(self)
+        self.screens["story_garage"] = story_ui.StoryGarage(self)
 
     # ------------------------------------------------------------- helpers
     @property
@@ -255,18 +264,21 @@ class App:
         return t, self._worlds[key]
 
     # ---------------------------------------------------------------- runs
-    def _begin_run(self, stage, mode="solo", race_m=0):
+    def _begin_run(self, stage, mode="solo", race_m=0, spec=None, levels=None, bank=None, story_event=None):
         self.audio.play("click")
-        spec = self.vehicle
+        spec = spec or self.vehicle
+        levels = levels if levels is not None else self.data["levels"][spec["key"]]
         terrain, self.world = self.world_for(stage)
         self.world.warm_up()                    # draw this map's scenery now, not in the middle of the run
         self.art.vehicle(spec, self.data["driver"])            # ...and the vehicle with the driver's face
         self.hud.clear()
         self.remote_bubbles.clear()
-        self.run = Run(stage, terrain, spec, self.data["levels"][spec["key"]], self.data["coins"],
-                       self.data["best"].get(stage["key"], 0), self.audio, self.hud, driver=self.data["driver"],
-                       horn=self.data["horn"], online=self.session, mode=mode, race_m=race_m, progress=self.progress)
-        self.run.counted = False
+        in_story = story_event is not None
+        self.run = Run(stage, terrain, spec, levels, self.data["coins"] if bank is None else bank,
+                       0 if in_story else self.data["best"].get(stage["key"], 0), self.audio, self.hud,
+                       driver=self.data["driver"], horn=self.data["horn"], online=None if in_story else self.session,
+                       mode=mode, race_m=race_m, progress=None if in_story else self.progress, story=story_event)
+        self.run.counted = in_story            # story runs don't count for trophies, records or daily challenges
         self.recorder = ghost.Recorder(self.run) if mode == "solo" else None
         self.ghost = ghost.load(stage["key"]) if mode == "solo" and self.data.get("ghosts", True) else None
         self.run_stage = stage
@@ -276,12 +288,58 @@ class App:
         self.state = "play"
         pygame.key.stop_text_input()
         self.audio.engine_stop()
-        self.audio.engine_start(spec["sound"], (self.data["levels"][spec["key"]].get("turbo", 1) - 1) / 4)
+        self.audio.engine_start(spec["sound"], (levels.get("turbo", 1) - 1) / 4)
         track = self.data["music_track"]
         self.audio.music(music.STAGE_MUSIC.get(stage["key"], "drive") if track == "auto" else track)
 
     def start_run(self):
+        if self.run is not None and self.run.story is not None and self.state == "play":
+            city, ev = self.run.story
+            self.start_story(city, ev["kind"])
+            return
         self._begin_run(self.stage)
+
+    # --------------------------------------------------------------- story
+    def open_city(self, city):
+        self.audio.play("click")
+        self.screens["city"].enter(city)
+        self.goto("city")
+
+    def start_story(self, city, kind):
+        st = story.state(self.data)
+        ev = story.event(city, kind)
+        spec = story.CAR_BY_KEY[st["car"]]
+        self._begin_run(city["stage"], "race", ev["distance"], spec=spec, levels=st["cars"][st["car"]],
+                        bank=st["cash"], story_event=(city, ev))
+
+    def _story_over(self, run):
+        """Pay out, hand over the rival's car, save, and show the result."""
+        st = story.state(self.data)
+        city, ev = run.story
+        kind, i = ev["kind"], story.city_index(city)
+        win = run.story_result == "win"
+        coins, cash, car = run.coins, 0, None
+        st["cash"] += coins
+        run.coins = 0
+        if win and kind == "rival":
+            if i == st["beaten"]:
+                st["beaten"] += 1
+                car = city["car"]
+                st["cars"].setdefault(car, {u: 1 for u in ("engine", "suspension", "tires", "boost", "turbo")})
+                st["car"] = car                     # jump straight into the new car
+                cash = story.pay(i, "rival", True)
+        elif win:
+            done = st["events"].setdefault(city["key"], [False, False, False])
+            j = story.EVENT_KINDS.index(kind)
+            cash = story.pay(i, kind, not done[j])
+            done[j] = True
+        st["cash"] += cash
+        self.persist()
+        self.audio.engine_stop()
+        self.story_results = story_ui.StoryResults(self, run, dict(
+            win=win, reason=run.reason, kind=kind, city=city, cash=cash, coins=coins, car=car,
+            finished_story=car is not None and st["beaten"] >= len(story.CITIES)))
+        self.state = "story_results"
 
     def start_daily(self):
         d = self.progress.daily()
@@ -304,6 +362,9 @@ class App:
 
     def end_run(self):
         run = self.run
+        if run.story is not None:
+            self._story_over(run)
+            return
         key = self.run_stage["key"]
         best = self.data["best"].get(key, 0)
         record = run.distance > best
@@ -445,6 +506,8 @@ class App:
             self.play_frame(dt, mouse)
         elif self.state == "results":
             self.results.draw(self.screen, mouse, self.now, dt)
+        elif self.state == "story_results":
+            self.story_results.draw(self.screen, mouse, self.now, dt)
         # on the results screen the top holds the big banner: show cards between score panel and buttons
         self.hud.draw_toasts(self.screen, dt, gfx.s(496) if self.state == "results" else None)
         if self.state in ("online", "lobby"):
@@ -458,7 +521,7 @@ class App:
 
     # ------------------------------------------------------------ browser
     SAFE_TO_RELAYOUT = ("home", "setup", "stages", "vehicles", "drivers", "garage", "settings", "trophies",
-                        "leaderboard")
+                        "leaderboard", "story", "city", "story_garage")
 
     def _web_tick(self, dt):
         """Twice a second: follow fullscreen changes and re-fit the layout to the browser's shape."""
@@ -502,14 +565,9 @@ class App:
         self.hud.touch_mode = touch_mode
         self._worlds.clear()
         state = self.state
-        self.screens = {"home": None, "stages": ui.StageSelect(self), "vehicles": ui.VehicleSelect(self),
-                        "drivers": ui.DriverSelect(self), "garage": ui.Garage(self),
-                        "online": ui.OnlineMenu(self), "lobby": ui.Lobby(self)}
-        self.screens["home"] = home.HomeMenu(self)
-        self.screens["setup"] = ui.Setup(self)
-        self.screens["settings"] = ui.Settings(self)
-        self.screens["trophies"] = ui.TrophyRoom(self)
-        self.screens["leaderboard"] = ui.Leaderboard(self)
+        city = self.screens["city"].city
+        self._make_screens()
+        self.screens["city"].enter(city)
         self.race_board = ui.RaceResults(self)
         self.invite_popup = ui.InvitePopup(self)
         self._fs_sent = None
@@ -590,6 +648,8 @@ class App:
             self.screens[self.state].handle(ev)
         elif self.state == "results":
             self.results.handle(ev)
+        elif self.state == "story_results":
+            self.story_results.handle(ev)
         elif self.state == "play":
             self.handle_play(ev)
 
@@ -625,7 +685,10 @@ class App:
             elif act == "restart":
                 self.start_run()
             elif act == "setup":
-                self.goto("setup")
+                if run.story is not None:
+                    self.open_city(run.story[0])
+                else:
+                    self.goto("setup")
             elif act == "lobby" and ses:
                 ses.back_to_lobby()
             elif act == "leave":
@@ -657,7 +720,7 @@ class App:
 
     def open_pause(self):
         if self.run.state == "drive":
-            self.pause = ui.PauseMenu(self, self.session)
+            self.pause = ui.PauseMenu(self, self.session, story=self.run.story is not None)
             if not self.run.online:
                 self.audio.engine_stop()
 
@@ -680,7 +743,7 @@ class App:
         run.is_night = darkness > 0.5
         if self.recorder and not frozen:
             self.recorder.record(run, dt)
-        daily = self.progress.daily_progress(run) if not self.progress.daily_done() else None
+        daily = self.progress.daily_progress(run) if run.story is None and not self.progress.daily_done() else None
         if daily:
             d, value = daily
             unit = {"distance": " m", "flips": " flips", "coins": " coins", "air": " s air"}[d["kind"]]
@@ -691,6 +754,10 @@ class App:
         run.lights_on = run.lights_forced if run.lights_forced is not None else (darkness > 0.22 or in_tunnel)
 
         views, race = [], None
+        if run.story is not None:
+            race = story_ui.race_info(run)
+            for ai in run.opponents:
+                views.append(CarView(ai.car, lights=ai.lights, label=ai.name, color=ai.color))
         if ses:
             self._online_tick(dt, run, ses, views)
             if run.mode == "race":
@@ -708,8 +775,12 @@ class App:
                       fs_icon)
         if fs_icon is not None:
             self.fs_rect = self.hud.fs_rect
+        if run.story is not None and run.state == "drive" and run.countdown <= 0:
+            story_ui.draw_hud(self.screen, run)
         if run.state == "ending":
             color = (255, 76, 60) if run.reason.startswith("DRIVER") else (255, 176, 40)
+            if run.story is not None:
+                color = (255, 200, 30) if run.story_result == "win" else (255, 76, 60)
             self.hud.draw_banner(self.screen, run.reason, color, run.end_t)
         if ses and run.mode == "race" and run.finished_at is not None and ses.results is None:
             gfx.blit_text(self.screen, "cond", 26, "Finished! Waiting for the others...", (255, 255, 255),

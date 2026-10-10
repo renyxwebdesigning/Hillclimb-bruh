@@ -34,6 +34,7 @@ PROFILES = {
     "mini": dict(idle=38, top=190, tilt=0.9, sub=0.3, f1=(520, 300, 1.6), f2=(1500, 600, 0.8), noise=0.25, gain=0.46),
     "excavator": dict(idle=11, top=46, tilt=1.4, sub=0.8, f1=(80, 50, 2.6), f2=(260, 140, 1.3), noise=0.5, gain=0.66),
     "lkw": dict(idle=10, top=52, tilt=1.35, sub=0.9, f1=(70, 45, 2.8), f2=(240, 120, 1.2), noise=0.42, gain=0.68),
+    "rusty": dict(idle=24, top=150, tilt=0.95, sub=0.7, f1=(380, 260, 1.6), f2=(1300, 700, 1.1), noise=0.5, gain=0.5),
     "golf": dict(idle=32, top=210, tilt=0.88, sub=0.25, f1=(470, 280, 1.7), f2=(1700, 650, 0.9), noise=0.24, gain=0.48),
     "shark": dict(electric=True, gain=0.22),
     "tank": dict(idle=12, top=58, tilt=1.35, sub=0.7, f1=(90, 60, 2.6), f2=(300, 160, 1.2), noise=0.45, gain=0.66),

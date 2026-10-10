@@ -34,11 +34,18 @@ SIZES = {
     # underwater
     "coral": (1.8, 1.7), "seaweed": (1.2, 3.2), "anemone": (1.2, 0.9), "shell": (0.7, 0.45), "starfish": (0.8, 0.3),
     "treasure": (1.3, 1.0), "shipwreck": (9.0, 6.0),
+    # story mode: one landmark per Blacklist city
+    "grossmuenster": (7.0, 11.0), "goldengate": (13.0, 11.5), "tokyotower": (6.4, 13.0), "eiffel": (8.6, 13.5),
+    "bigben": (4.2, 12.5), "vegassign": (5.6, 7.0), "casino": (11.0, 7.6), "hktower": (5.4, 13.5),
+    "artdeco": (8.4, 7.4), "mosque": (11.6, 8.6),
 }
+# landmarks with writing on them: never mirrored
+NO_FLIP = {"billboard", "vegassign", "casino", "artdeco"}
 # landmarks with moving parts (render.WorldRenderer animates them) or lights
 LANDMARKS = {"windmill", "barn", "pyramid", "pumpjack", "igloo", "lander", "billboard", "hut", "temple", "dome",
              "launchpad", "shipwreck"}
-LIGHTS = {"lamp": (0.42, 3.15), "billboard": (0.0, 5.0), "trafficlight": (0.0, 2.9)}  # glow at night: (x, y) of the light
+LIGHTS = {"lamp": (0.42, 3.15), "billboard": (0.0, 5.0), "trafficlight": (0.0, 2.9), "vegassign": (0.0, 5.0),
+          "artdeco": (0.0, 5.8), "hktower": (0.0, 12.6), "tokyotower": (0.0, 8.6), "casino": (0.0, 3.0)}  # glow at night: (x, y) of the light
 
 
 def make(kind, ppm, variant=0):
@@ -471,6 +478,141 @@ def make(kind, ppm, variant=0):
             surf.blit(t1, t1.get_rect(center=P(0.0, 4.25)))
             t2 = gfx.font_px("heavy", 0.55 * sc).render("G A M E S", True, (255, 204, 48))
             surf.blit(t2, t2.get_rect(center=P(0.0, 3.0)))
+        elif kind == "grossmuenster":               # Zurich: twin towers with dark domed caps
+            stone, shade, roof = (228, 214, 188), (196, 182, 156), (70, 84, 84)
+            poly(stone, [(-3.4, 0), (3.4, 0), (3.4, 4.2), (-3.4, 4.2)])
+            poly(roof, [(-3.6, 4.2), (3.6, 4.2), (2.6, 5.4), (-2.6, 5.4)])
+            for x in (-1.7, 1.7):
+                poly(stone, [(x - 0.75, 0), (x + 0.75, 0), (x + 0.75, 8.6), (x - 0.75, 8.6)])
+                poly(shade, [(x + 0.3, 0), (x + 0.75, 0), (x + 0.75, 8.6), (x + 0.3, 8.6)])
+                poly(roof, [(x - 0.8, 8.6), (x + 0.8, 8.6), (x + 0.55, 9.6), (x, 10.8), (x - 0.55, 9.6)])
+                circ((200, 170, 60), x, 10.85, 0.12)
+                for y in (3.0, 5.2, 7.2):
+                    pygame.draw.rect(surf, (60, 64, 76), pygame.Rect(P(x - 0.2, y + 0.7), (0.4 * sc, 0.7 * sc)),
+                                     border_top_left_radius=int(0.2 * sc), border_top_right_radius=int(0.2 * sc))
+                circ((240, 236, 220), x, 6.6, 0.32)
+            pygame.draw.rect(surf, (90, 60, 40), pygame.Rect(P(-0.5, 1.8), (1.0 * sc, 1.8 * sc)),
+                             border_top_left_radius=int(0.5 * sc), border_top_right_radius=int(0.5 * sc))
+        elif kind == "goldengate":                  # San Francisco: one tower, cables and the deck
+            red, red_dk = (196, 58, 38), (150, 40, 26)
+            for x in (-1.2, 1.2):
+                poly(red, [(x - 0.32, 0), (x + 0.32, 0), (x + 0.22, 10.9), (x - 0.22, 10.9)])
+            for y in (4.6, 7.6, 10.4):
+                poly(red_dk, [(-1.4, y), (1.4, y), (1.4, y + 0.42), (-1.4, y + 0.42)])
+            for side in (-1, 1):
+                pts = [(side * (1.2 + i * 0.5), 10.6 - 7.2 * (1 - (1 - i / 10) ** 2)) for i in range(11)]
+                pygame.draw.lines(surf, red, False, [P(*q) for q in pts], max(1, int(0.12 * sc)))
+                for qx, qy in pts[1:]:
+                    line(red_dk, (qx, qy), (qx, 3.4), 0.04)
+            poly((70, 74, 82), [(-6.4, 3.0), (6.4, 3.0), (6.4, 3.45), (-6.4, 3.45)])
+            poly(red, [(-6.4, 3.45), (6.4, 3.45), (6.4, 3.7), (-6.4, 3.7)])
+        elif kind == "tokyotower":                  # Tokyo: red and white lattice tower
+            red, white = (230, 70, 40), (246, 246, 240)
+            for i in range(12):
+                y0, y1 = i * 0.95, (i + 1) * 0.95
+                w0, w1 = 2.9 * (1 - y0 / 11.6) ** 1.6 + 0.22, 2.9 * (1 - y1 / 11.6) ** 1.6 + 0.22
+                col = red if i % 2 == 0 else white
+                poly(col, [(-w0, y0), (-w0 + 0.3, y0), (-w1 + 0.3, y1), (-w1, y1)])
+                poly(col, [(w0 - 0.3, y0), (w0, y0), (w1, y1), (w1 - 0.3, y1)])
+                line(col, (-w0 + 0.2, y0), (w1 - 0.2, y1), 0.07)
+                line(col, (w0 - 0.2, y0), (-w1 + 0.2, y1), 0.07)
+            for y, w in ((4.6, 1.8), (8.4, 1.0)):
+                poly(white, [(-w, y), (w, y), (w, y + 0.7), (-w, y + 0.7)])
+                poly((90, 140, 200), [(-w + 0.15, y + 0.25), (w - 0.15, y + 0.25), (w - 0.15, y + 0.5), (-w + 0.15, y + 0.5)])
+            line(red, (0, 11.4), (0, 12.9), 0.12)
+        elif kind == "eiffel":                      # Paris
+            iron, iron_dk = (120, 98, 72), (88, 70, 52)
+            def leg(sign):
+                outer = [(sign * (4.2 - 3.9 * (y / 12.6) ** 0.55), y) for y in [i * 0.6 for i in range(22)]]
+                inner = [(sign * max(0.15, (2.4 - 2.4 * (y / 7.0) ** 0.7) if y < 7 else 0.15), y)
+                         for y in [i * 0.6 for i in range(22)]]
+                poly(iron, outer + inner[::-1])
+                for (ax, ay), (bx, by) in zip(outer[::2], inner[1::2]):
+                    line(iron_dk, (ax, ay), (bx, by), 0.05)
+            leg(-1)
+            leg(1)
+            pygame.draw.arc(surf, iron_dk, pygame.Rect(P(-2.4, 4.2), (4.8 * sc, 5.6 * sc)), 0, math.pi, max(1, int(0.22 * sc)))
+            for y, w in ((3.3, 3.0), (6.6, 1.5), (11.4, 0.5)):
+                poly(iron_dk, [(-w, y), (w, y), (w, y + 0.35), (-w, y + 0.35)])
+            line(iron_dk, (0, 11.5), (0, 13.4), 0.1)
+        elif kind == "bigben":                      # London: clock tower
+            stone, shade, gold = (214, 194, 140), (180, 160, 112), (220, 180, 70)
+            poly(stone, [(-1.2, 0), (1.2, 0), (1.2, 8.2), (-1.2, 8.2)])
+            poly(shade, [(0.5, 0), (1.2, 0), (1.2, 8.2), (0.5, 8.2)])
+            for x in (-0.7, 0.0, 0.7):
+                line((150, 130, 90), (x, 0.4), (x, 6.0), 0.08)
+            poly(stone, [(-1.4, 6.2), (1.4, 6.2), (1.4, 8.4), (-1.4, 8.4)])
+            circ(gold, 0, 7.3, 0.9)
+            circ((250, 248, 236), 0, 7.3, 0.75)
+            line((30, 30, 34), (0, 7.3), (0, 7.85), 0.07)
+            line((30, 30, 34), (0, 7.3), (0.4, 7.2), 0.06)
+            poly(shade, [(-1.1, 8.4), (1.1, 8.4), (1.0, 9.5), (-1.0, 9.5)])
+            poly((60, 70, 74), [(-1.2, 9.5), (1.2, 9.5), (0.0, 12.2)])
+            circ(gold, 0, 12.25, 0.12)
+        elif kind == "vegassign":                   # Las Vegas welcome sign
+            line((220, 220, 226), (0, 0), (0, 3.0), 0.3)
+            poly((250, 250, 244), [(-2.6, 4.6), (0, 6.6), (2.6, 4.6), (0, 2.8)])
+            pygame.draw.polygon(surf, (220, 40, 40), [P(-2.6, 4.6), P(0, 6.6), P(2.6, 4.6), P(0, 2.8)], max(1, int(0.1 * sc)))
+            for i in range(14):
+                a = i / 14 * math.tau
+                circ((255, 220, 90), math.cos(a) * 2.2, 4.7 + math.sin(a) * 1.5, 0.08)
+            t1 = gfx.font_px("black_i", 0.42 * sc).render("WELCOME", True, (220, 40, 40))
+            surf.blit(t1, t1.get_rect(center=P(0, 5.3)))
+            t2 = gfx.font_px("black_i", 0.6 * sc).render("LAS VEGAS", True, (40, 80, 200))
+            surf.blit(t2, t2.get_rect(center=P(0, 4.5)))
+            circ((255, 210, 40), 0, 6.3, 0.22)
+        elif kind == "casino":                      # Monaco: Casino de Monte-Carlo
+            stone, shade, copper = (238, 222, 188), (206, 188, 150), (96, 156, 130)
+            poly(stone, [(-5.2, 0), (5.2, 0), (5.2, 4.2), (-5.2, 4.2)])
+            for x in (-4.0, 4.0):
+                poly(stone, [(x - 0.9, 0), (x + 0.9, 0), (x + 0.9, 5.6), (x - 0.9, 5.6)])
+                poly(copper, [(x - 1.0, 5.6), (x + 1.0, 5.6), (x, 7.2)])
+            pygame.draw.ellipse(surf, copper, pygame.Rect(P(-1.6, 6.0), (3.2 * sc, 2.4 * sc)))
+            poly(shade, [(-5.2, 4.0), (5.2, 4.0), (5.2, 4.4), (-5.2, 4.4)])
+            for x in (-2.4, -1.2, 0.0, 1.2, 2.4):
+                pygame.draw.rect(surf, (70, 76, 96), pygame.Rect(P(x - 0.35, 3.2), (0.7 * sc, 1.6 * sc)),
+                                 border_top_left_radius=int(0.35 * sc), border_top_right_radius=int(0.35 * sc))
+            t = gfx.font_px("black_i", 0.5 * sc).render("CASINO", True, (180, 140, 40))
+            surf.blit(t, t.get_rect(center=P(0, 3.75)))
+        elif kind == "hktower":                     # Hong Kong: glass prism with X braces
+            glass, glass_hi, brace = (70, 110, 160), (120, 170, 220), (220, 226, 236)
+            poly(glass, [(-2.2, 0), (2.2, 0), (2.2, 8.0), (0.4, 11.6), (-2.2, 9.2)])
+            poly(glass_hi, [(0.2, 0), (2.2, 0), (2.2, 8.0), (0.4, 11.6), (0.2, 9.4)])
+            for y in (0.0, 2.8, 5.6):
+                line(brace, (-2.2, y), (2.2, y + 2.8), 0.08)
+                line(brace, (2.2, y), (-2.2, y + 2.8), 0.08)
+            for x in (-0.9, 0.2):
+                line((200, 200, 210), (x, 10.6), (x, 13.3), 0.08)
+            for i in range(30):
+                circ((255, 230, 140) if rnd.random() < 0.5 else (140, 200, 255), rnd.uniform(-2.0, 2.0),
+                     rnd.uniform(0.4, 8.0), 0.05)
+        elif kind == "artdeco":                     # Miami: pastel art deco hotel with a neon sign
+            pink, teal, white = (250, 182, 196), (90, 200, 196), (252, 250, 244)
+            poly(pink, [(-4.0, 0), (4.0, 0), (4.0, 5.0), (-4.0, 5.0)])
+            poly(white, [(-1.4, 5.0), (1.4, 5.0), (1.4, 6.6), (-1.4, 6.6)])
+            poly(teal, [(-0.6, 6.6), (0.6, 6.6), (0.0, 7.3)])
+            for y in (1.3, 2.6, 3.8):
+                poly(teal, [(-4.0, y), (4.0, y), (4.0, y + 0.18), (-4.0, y + 0.18)])
+                for x in (-3.0, -1.8, 1.8, 3.0):
+                    pygame.draw.rect(surf, (90, 130, 170), pygame.Rect(P(x - 0.3, y + 0.95), (0.6 * sc, 0.7 * sc)))
+            t = gfx.font_px("black_i", 0.7 * sc).render("HOTEL", True, (255, 80, 160))
+            surf.blit(t, t.get_rect(center=P(0, 5.8)))
+        elif kind == "mosque":                      # Abu Dhabi: white domes and minarets
+            white, shade, gold = (250, 250, 246), (220, 222, 226), (220, 180, 70)
+            poly(white, [(-4.6, 0), (4.6, 0), (4.6, 3.6), (-4.6, 3.6)])
+            pygame.draw.ellipse(surf, white, pygame.Rect(P(-2.2, 6.6), (4.4 * sc, 6.0 * sc)))
+            pygame.draw.ellipse(surf, shade, pygame.Rect(P(0.3, 6.4), (1.8 * sc, 5.6 * sc)))
+            line(gold, (0, 6.5), (0, 7.4), 0.08)
+            for x in (-3.3, 3.3):
+                pygame.draw.ellipse(surf, white, pygame.Rect(P(x - 1.0, 5.0), (2.0 * sc, 2.6 * sc)))
+                line(gold, (x, 4.9), (x, 5.5), 0.06)
+            for x in (-5.4, 5.4):
+                poly(white, [(x - 0.32, 0), (x + 0.32, 0), (x + 0.26, 7.6), (x - 0.26, 7.6)])
+                poly(shade, [(x - 0.42, 6.2), (x + 0.42, 6.2), (x + 0.42, 6.5), (x - 0.42, 6.5)])
+                poly(gold, [(x - 0.26, 7.6), (x + 0.26, 7.6), (x, 8.5)])
+            for x in (-3.0, -1.5, 0.0, 1.5, 3.0):
+                pygame.draw.rect(surf, (180, 190, 200), pygame.Rect(P(x - 0.35, 2.6), (0.7 * sc, 1.8 * sc)),
+                                 border_top_left_radius=int(0.35 * sc), border_top_right_radius=int(0.35 * sc))
         elif kind == "hut":
             poly((60, 50, 46), [(-1.7, 0), (1.7, 0), (1.6, 2.0), (-1.6, 2.0)])
             poly((40, 34, 32), [(-1.9, 1.9), (1.9, 1.9), (0.6, 3.1), (-0.4, 2.8)])

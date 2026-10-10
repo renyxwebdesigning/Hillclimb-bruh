@@ -18,6 +18,21 @@ def set_lang(code):
     LANG = code if code in dict(LANGUAGES) else "en"
 
 
+DE.update({                       # story mode
+    "STORY MODE": "STORY-MODUS", "TARGET": "ZIEL", "BEATEN": "BESIEGT", "LOCKED": "GESPERRT",
+    "STREET RACE": "STRASSENRENNEN", "TIME TRIAL": "ZEITRENNEN", "POLICE CHASE": "POLIZEIJAGD",
+    "BLACKLIST RACE": "BLACKLIST-RENNEN", "NEW": "NEU", "CHALLENGE": "HERAUSFORDERN",
+    "FINISH ALL 3 EVENTS": "ERST ALLE 3 EVENTS", "RACE!": "LOS!", "NOT YET": "NOCH NICHT",
+    "TO THE CITY": "IN DIE STADT", "YOU WIN!": "GEWONNEN!", "ESCAPED!": "ENTKOMMEN!", "BUSTED!": "ERWISCHT!",
+    "TIME'S UP!": "ZEIT ABGELAUFEN!", "MADE IT!": "GESCHAFFT!", "QUIT RACE": "RENNEN BEENDEN",
+    "LET'S GO": "LOS GEHT'S", "BUSTED": "ERWISCHT", "COPS ON YOU!": "POLIZEI AN DIR DRAN!",
+    "YOU ARE #1": "DU BIST #1", "YOUR CAR": "DEIN AUTO", "DONE  ·  REPLAY": "GESCHAFFT  ·  NOCHMAL",
+    "Beat a street racer to the finish": "Schlag einen Strassenracer bis ins Ziel",
+    "Reach the finish before the clock runs out": "Erreiche das Ziel, bevor die Zeit abläuft",
+    "Outrun the cops: don't let them box you in": "Häng die Polizei ab: lass dich nicht einkesseln",
+    "Win, and their car is yours": "Gewinn, und das Auto gehört dir",
+})
+
 def tr(text):
     if COLLECT is not None:
         COLLECT.add(text)

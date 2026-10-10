@@ -134,7 +134,7 @@ def compose_vehicle(art, spec, scale, levels=None, angle=0.0, driver="default"):
     stats = vehicle_stats(spec, levels or {})
     wheels = rest_wheel_offsets(spec, stats)
     k = art.ppm * scale
-    ext = vehicle_art.EXTENT[spec["key"]]
+    ext = vehicle_art.EXTENT.get(spec["key"], 2.75)
     size = int(2 * ext * k)
     surf = pygame.Surface((size, size), pygame.SRCALPHA)
     c = size / 2
@@ -440,9 +440,10 @@ class Backdrop:
 
     SUNS = {"clouds": ((255, 252, 230), 0.84, 0.16, 40), "sun": ((255, 248, 222), 0.76, 0.3, 54),
             "snow": ((255, 255, 250), 0.18, 0.14, 34), "city": ((255, 246, 220), 0.8, 0.2, 38),
+            "citynight": ((236, 236, 250), 0.22, 0.16, 26),
             "jungle": ((255, 250, 220), 0.78, 0.14, 36), "mars": ((255, 240, 220), 0.7, 0.22, 20),
             "seasons": ((255, 250, 228), 0.8, 0.18, 42)}
-    SHAPES = {"clouds": 0, "sun": 1, "snow": 2, "space": 3, "city": 4, "volcano": 5, "jungle": 0, "mars": 1,
+    SHAPES = {"clouds": 0, "sun": 1, "snow": 2, "space": 3, "city": 4, "citynight": 4, "volcano": 5, "jungle": 0, "mars": 1,
               "seasons": 0, "ocean": 0}
     WEATHER = {"snow": "snow", "jungle": "rain", "volcano": "embers", "mars": "dust", "ocean": "bubbles"}
     BIRDS = {"clouds": "flock", "jungle": "flock", "seasons": "flock", "sun": "vultures", "ocean": "fish"}
@@ -460,7 +461,8 @@ class Backdrop:
         self.night = lighting.night_sky(stage, W, H) if stage.get("cycle") else None
         self.sunset = lighting.sunset_sky(W, H) if stage.get("cycle") else None
         self.clouds = []
-        tint = {"sun": (255, 246, 230), "volcano": (74, 56, 56), "mars": (236, 196, 170)}.get(decor, (255, 255, 255))
+        tint = {"sun": (255, 246, 230), "volcano": (74, 56, 56), "mars": (236, 196, 170),
+                "citynight": (70, 64, 100)}.get(decor, (255, 255, 255))
         if decor not in ("space", "ocean"):
             n = 6 if decor != "mars" else 3
             for i in range(n):
@@ -567,8 +569,9 @@ class Backdrop:
             near = gfx.mix(near, (18, 24, 50), night * 0.55)
         shape = self.SHAPES[st["decor"]]
         if shape == 4:
-            self._skyline(surf, cam, far, 0.05, 0.62, 1.0, night, 3)
-            self._skyline(surf, cam, near, 0.12, 0.74, 0.75, night, 9)
+            lit = 1.0 if st["decor"] == "citynight" else night       # neon cities: every window lit
+            self._skyline(surf, cam, far, 0.05, 0.62, 1.0, lit, 3)
+            self._skyline(surf, cam, near, 0.12, 0.74, 0.75, lit, 9)
         elif shape == 5:
             self._volcanoes(surf, cam, far, near)
         else:
@@ -818,7 +821,7 @@ class WorldRenderer:
                     self._draw_water(surf, cam, a - 0.3, b + 0.3, level, now)
                 else:
                     self._draw_gap(surf, cam, a, b)
-        if st["key"] == "city":
+        if st["key"] == "city" or st.get("street"):
             dash = max(2, int(gfx.s(3)))
             for i in range(i0 - i0 % 12, i1 - 6, 12):
                 if t.feature_at(START + i * RES) in ("bridge", "tunnel", "pit", "cars", "traffic"):
@@ -1418,6 +1421,7 @@ class WorldRenderer:
         bucket = int(cam.ppm / 2) * 2
         for i in range(bisect.bisect_left(self.mark_x, x0), bisect.bisect_right(self.mark_x, x1)):
             x, kind, flip = t.landmarks[i]
+            flip = flip and kind not in prop_art.NO_FLIP
             img = self._sprite(kind, 0, bucket, flip)
             sx, sy = cam.to_screen(x, t.visual_height(x) - 0.12)
             surf.blit(img, img.get_rect(midbottom=(sx, sy)))

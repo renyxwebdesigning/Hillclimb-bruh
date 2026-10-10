@@ -12,11 +12,17 @@ START_X = 2.0
 
 class Run:
     def __init__(self, stage, terrain, spec, levels, bank, best, audio, hud, driver="default",
-                 horn="puppy", online=None, mode="solo", race_m=0, progress=None):
+                 horn="puppy", online=None, mode="solo", race_m=0, progress=None, story=None):
         self.stage, self.terrain, self.audio, self.hud = stage, terrain, audio, hud
         self.spec, self.driver, self.horn_kind = spec, driver, horn
         self.online, self.mode, self.race_m = online, mode, race_m
         self.progress = progress
+        # story mode: (city, event) and the AI cars; a crash costs time there instead of ending the run
+        self.story = story
+        self.forgiving = online is not None or story is not None
+        self.story_result = None
+        self.busted = 0.0
+        self._siren_t = 0.0
         self.flips = 0
         self.max_air = 0.0
         self.pits_cleared = 0
@@ -32,6 +38,10 @@ class Run:
         for t in terrain.trophies:
             t[3] = bool(progress and progress.has_trophy(stage["key"], t[2]))
         self.stats = vehicle_stats(spec, levels)
+        self.opponents = []
+        if story is not None:
+            import story as story_mode
+            self.opponents = story_mode.make_opponents(terrain, stage, story[0], story[1], START_X)
         self._lift = max(spec["rest"] + w[2] - w[1] for w in spec["wheels"]) + 0.05
         self.car = Vehicle(START_X, terrain.height(START_X) + self._lift, spec, self.stats)
         self.boost = 1.0
@@ -146,6 +156,8 @@ class Run:
                 self._pickups()
                 self._stunts(dt)
                 self._check_finish()
+                if self.story is not None:
+                    self._story_tick(dt)
                 self._check_lava()
                 self._check_flipped(dt)
         else:
@@ -199,8 +211,8 @@ class Run:
         for _ in range(18):
             self.particles.add("chunk", x, y, random.uniform(-3, 3), random.uniform(1, 5), 0.9,
                                random.uniform(0.06, 0.13), random.choice((self.stage["ground"], self.stage["top"])))
-        if self.online:
-            # Online nobody drops out: shake it off and get back on the road.
+        if self.forgiving:
+            # Online (and in story races) nobody drops out: shake it off and get back on the road.
             self.respawn_t = 1.6
             self.hud.notice("DRIVER DOWN!", (255, 90, 70))
             self.outbox.append({"kind": "crash", "line": line})
@@ -217,7 +229,7 @@ class Run:
                 for _ in range(24):
                     self.particles.add("spark", self.car.x, pit[2], random.uniform(-3, 3), random.uniform(2, 7), 0.8,
                                        0.09, random.choice(((255, 200, 60), (255, 110, 20), (255, 60, 20))), grav=8)
-            if self.online:
+            if self.forgiving:
                 self.respawn_t = 1.2
                 self.hud.notice("BURNED!" if lava else "FELL!", (255, 120, 40))
                 self.outbox.append({"kind": "crash", "line": line})
@@ -280,7 +292,7 @@ class Run:
             for _ in range(18):
                 self.particles.add("chunk", car.x, car.y + 0.5, random.uniform(-3, 3), random.uniform(1, 5), 0.9,
                                    random.uniform(0.06, 0.13), (90, 90, 96))
-            if self.online:
+            if self.forgiving:
                 self.respawn_t = 1.4
                 self.hud.notice(short, (255, 90, 70))
                 self.outbox.append({"kind": "crash", "line": line})
@@ -296,7 +308,7 @@ class Run:
         if self._flip_t < 2.5 or self.state != "drive":
             return
         self._flip_t = 0.0
-        if self.online:
+        if self.forgiving:
             self.respawn_t = 0.4
             self.hud.notice("FLIPPED!", (255, 176, 40))
         else:
@@ -326,6 +338,45 @@ class Run:
         self.end_t = 0.0
         self.boosting = False
         self.audio.boost(False)
+
+    # ---------------------------------------------------------------- story
+    def _story_tick(self, dt):
+        """AI cars drive, and the event is won or lost: first over the line, beat the clock, or escape the cops."""
+        if self.countdown > 0:
+            return
+        car = self.car
+        ev = self.story[1]
+        for ai in self.opponents:
+            ai.update(dt, car.x, self.time)
+            if ai.role != "cop" and ai.finished_at is None and ai.x - START_X >= self.race_m:
+                ai.finished_at = self.race_time
+        kind = ev["kind"]
+        if self.finished_at is not None:
+            self._story_end("win", {"pursuit": "ESCAPED!", "trial": "MADE IT!"}.get(kind, "YOU WIN!"))
+        elif kind in ("sprint", "rival") and any(ai.finished_at is not None for ai in self.opponents):
+            self._story_end("lose", f"{self.opponents[0].name} WINS!")
+        elif kind == "trial" and self.race_time > ev["limit"]:
+            self._story_end("lose", "TIME'S UP!")
+        elif kind == "pursuit":
+            near = [ai for ai in self.opponents if abs(ai.x - car.x) < 4.5 and abs(ai.car.y - car.y) < 3.0
+                    and ai.respawn_t is None]
+            slow = math.hypot(car.vx, car.vy) < 9.0
+            if near:                        # boxed in: fills fast when you are slow, slowly even at speed
+                self.busted = min(2.0, self.busted + dt * (1.0 if slow else 0.35))
+            else:
+                self.busted = max(0.0, self.busted - dt * 0.6)
+            closest = min((abs(ai.x - car.x) for ai in self.opponents), default=99)
+            self._siren_t -= dt
+            if closest < 40 and self._siren_t <= 0:
+                self._siren_t = 2.6
+                self.audio.play("horn_siren", 0.3 if closest > 15 else 0.55)
+            if self.busted >= 2.0:
+                self._story_end("lose", "BUSTED!")
+
+    def _story_end(self, result, reason):
+        self.story_result = result
+        self.audio.play("finish" if result == "win" else "crash")
+        self.finish(reason)
 
     def _check_finish(self):
         if self.mode != "race" or self.finished_at is not None:

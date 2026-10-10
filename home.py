@@ -109,11 +109,12 @@ class HomeMenu:
         cx = gfx.W - s(214)
         self.play_btn = Button("PLAY", (cx, gfx.H - s(176)), (360, 116), "green", icon=_play_icon(s(44)), key="setup")
         self.online_btn = Button("PLAY ONLINE", (cx, gfx.H - s(60)), (360, 70), "blue", key="online")
+        self.story_btn = Button("STORY MODE", (cx, gfx.H - s(296)), (360, 84), "yellow", key="story")
         size, gap = s(116), s(16)
         self.tiles = [Tile(label, key, pygame.Rect(s(32) + i * (size + gap), gfx.H - s(24) - size, size, size))
                       for i, (label, key) in enumerate(TILES)]
-        self.items = [self.play_btn, self.online_btn] + self.tiles      # keyboard order
-        self.focus = 0
+        self.items = [self.story_btn, self.play_btn, self.online_btn] + self.tiles      # keyboard order
+        self.focus = 1
         self.shade = self._shade()
         self.demo = None
         self.demo_stage = random.randrange(len(STAGES))
@@ -223,7 +224,7 @@ class HomeMenu:
         self._info_card(surf)
         self._daily_card(surf, mouse)
         pressed = pygame.mouse.get_pressed()[0]
-        for i, b in enumerate([self.play_btn, self.online_btn]):
+        for i, b in enumerate([self.story_btn, self.play_btn, self.online_btn]):
             focus = self.items[self.focus] is b
             if focus and not b.rect.collidepoint(mouse):
                 pygame.draw.rect(surf, GOLD, b.rect.inflate(s(12), s(12)), si(4), border_radius=si(22))

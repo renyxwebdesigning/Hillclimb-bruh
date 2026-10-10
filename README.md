@@ -38,6 +38,17 @@ Every player gets a permanent **player number** (for example `#482913`), shown a
 
 Online play goes through a free public relay server (HiveMQ, with fallbacks), so it needs an internet connection. The download version connects directly, the browser version over a WebSocket; both meet on the same server. Only car positions, names and player numbers are sent. On phones the game shows its own keyboard for typing numbers and names.
 
+## Story mode
+
+Climb the **Blacklist**: the ten most wanted street racers in the world, one in every big city: Zurich, San Francisco, Tokyo, Paris, London, Las Vegas, Monaco, Hong Kong, Miami and Abu Dhabi. You start with a rusty old Corsa.
+
+1. In each city, win cash in a **street race**, a **time trial** and a **police chase** (replay them for more).
+2. Spend it in the story garage: every car has its own engine, suspension, tires, boost and turbo upgrades.
+3. Finished all three events? Challenge the city's Blacklist racer. Win, and **their car is yours**.
+4. On to the next city, with a better car and a tougher rival: Audi TT, Ford Mustang GT, Nissan Skyline GT-R, BMW M3 GTR, Aston Martin DB9, Chevrolet Corvette, Porsche 911 GT2, Mercedes SLR McLaren, Lamborghini Murcielago and finally Mirage's Ferrari Enzo.
+
+The bars in the menus show how your car compares to the next rival. If it looks slower, earn more and upgrade.
+
 ## Controls
 
 | Key | Action |

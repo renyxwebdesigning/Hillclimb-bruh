@@ -296,8 +296,9 @@ class Hud:
             cx = bar.x + bar.w * f
             pygame.draw.circle(surf, INK, (cx, bar.centery), s(11 if p["me"] else 9))
             pygame.draw.circle(surf, p["color"], (cx, bar.centery), s(8 if p["me"] else 6))
-        gfx.blit_text(surf, "black_i", 30, f"POS {race['pos']}/{len(race['players'])}", WHITE,
-                      (bar.right + s(60), bar.centery), "midleft", outline=INK, width=2)
+        if not race.get("no_pos"):
+            gfx.blit_text(surf, "black_i", 30, f"POS {race['pos']}/{len(race['players'])}", WHITE,
+                          (bar.right + s(60), bar.centery), "midleft", outline=INK, width=2)
         if run.mode == "race":
             t = run.finished_at if run.finished_at is not None else run.race_time
             gfx.blit_text(surf, "cond", 22, f"{t:5.1f}s", WHITE, (bar.x - s(16), bar.centery), "midright",
